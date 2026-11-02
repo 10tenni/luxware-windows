@@ -243,6 +243,24 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
     check("staleObservationCannotMoveMouse", staleCannotMove);
     check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
+    SelfGuard ownGuard;
+    Feature ownSignature{};
+    Detection ownProposal{{.4, .5, .15, .3}, .9f, 0, false, ownSignature};
+    bool ownContinues = true;
+    for (int frame = 0; frame < 7; ++frame) {
+      Feature variant{};
+      for (int i = 0; i < 36; ++i)
+        variant[i] = frame * .1f;
+      ownProposal.feature = variant;
+      ownContinues = ownGuard.filter({ownProposal}, {ownSignature}, 1 + frame * .02).empty() && ownContinues;
+    }
+    check("selfExclusionContinuesAcrossSmallCurrentAppearanceChanges", ownContinues);
+    Detection separateBody = ownProposal;
+    separateBody.box = {.05, .1, .15, .3};
+    check("selfExclusionDoesNotMaskDistantDifferentBody",
+          ownGuard.filter({separateBody}, {ownSignature}, 1.14).size() == 1);
+    check("selfExclusionContinuationExpires",
+          ownGuard.filter({ownProposal}, {ownSignature}, 1.7).size() == 1);
     AimMemory aimMemory;
     aimMemory.observe(3, false, 1);
     aimMemory.filterX = 150;

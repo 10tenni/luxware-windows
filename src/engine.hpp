@@ -55,6 +55,53 @@ inline bool ownBody(const Feature &f, const std::vector<Feature> &refs) {
   return false;
 }
 
+// Saved-self pixel matches can continue briefly through a small appearance change.
+// The continuation only rejects overlapping current proposals; it never creates an aiming target.
+class SelfGuard {
+  struct Observation {
+    Rect box;
+    Feature feature;
+    double time;
+  };
+  std::vector<Observation> memory;
+
+public:
+  void reset() {
+    memory.clear();
+  }
+  std::vector<Detection> filter(const std::vector<Detection> &proposals, const std::vector<Feature> &refs,
+                                double t) {
+    if (refs.empty()) {
+      reset();
+      return proposals;
+    }
+    std::vector<Observation> previous;
+    for (auto &m : memory)
+      if (t >= m.time && t - m.time <= .15)
+        previous.push_back(m);
+    std::vector<Observation> current;
+    std::vector<Detection> accepted;
+    for (auto &d : proposals) {
+      if (!d.feature)
+        continue;
+      bool own = ownBody(*d.feature, refs);
+      if (!own)
+        for (auto &m : previous)
+          if (overlap(d.box, m.box) >= .5 && distance(*d.feature, m.feature) < .65) {
+            own = true;
+            break;
+          }
+      if (own) {
+        if (current.size() < 8)
+          current.push_back({d.box, *d.feature, t});
+      } else
+        accepted.push_back(d);
+    }
+    memory = current.empty() ? previous : current;
+    return accepted;
+  }
+};
+
 // A brief current-image template check, never a predicted box for invisible pixels.
 class VisualBridge {
   std::optional<Detection> last;
@@ -140,6 +187,7 @@ inline void worker(Shared &shared) {
     Capture capture;
     Model model;
     Tracker tracker;
+    SelfGuard selfGuard;
     Rates fps;
     unsigned reset = shared.reset.load(), reload = ~0u;
     bool previousSingle = false;
@@ -151,6 +199,7 @@ inline void worker(Shared &shared) {
         reload = wanted;
         shared.modelReady = false;
         tracker.reset();
+        selfGuard.reset();
         try {
           auto path = s.modelPath.empty() ? appFolder() / L"Models/LuxwarePlayers.onnx"
                                           : std::filesystem::path(s.modelPath);
@@ -169,6 +218,7 @@ inline void worker(Shared &shared) {
         reset = shared.reset.load();
         previousSingle = s.single;
         tracker.reset();
+        selfGuard.reset();
       }
       HWND source = shared.source.load();
       double started = now();
@@ -193,12 +243,9 @@ inline void worker(Shared &shared) {
         std::vector<Detection> detections;
         if (shared.modelReady && s.aim) {
           detections = model.run(*image, s.confidence);
-          detections.erase(std::remove_if(detections.begin(), detections.end(),
-                                          [&](Detection &d) {
-                                            d.feature = describe(*image, d.box);
-                                            return ownBody(*d.feature, own);
-                                          }),
-                           detections.end());
+          for (auto &d : detections)
+            d.feature = describe(*image, d.box);
+          detections = selfGuard.filter(detections, own, received);
         }
         auto tracks = tracker.update(detections, received, s.single);
         std::optional<Track> chosen;
