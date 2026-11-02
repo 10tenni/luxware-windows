@@ -1,0 +1,12 @@
+{
+  "name": "LuxwarePlayers",
+  "class": "avatar",
+  "training": "Mac player fine-tune v3; weights unchanged",
+  "checkpointSHA256": "f61ea420a39d0445e458e8470a091aa1ddcfbc7fdbe581ef6789643b1090b13c",
+  "preprocess": "RGB float32 /255; full-frame resize to 640x640 (scaleFill), NCHW",
+  "outputs": "YOLOv8 decoded raw [1,5,8400]; x,y,w,h in 640px; class score already activated",
+  "confidence": 0.4,
+  "nmsIoU": 0.45,
+  "license": "AGPL-3.0",
+  "scope": "Limited recorded-avatar appearances; not validated universal PvP or ownership identification."
+}

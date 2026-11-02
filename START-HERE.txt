@@ -1,0 +1,35 @@
+LUXWARE FOR WINDOWS x64
+
+1. Extract the ENTIRE ZIP into a folder on the Windows PC.
+2. Open Luxware.exe. Keep its DLLs, Models and other folders together.
+3. Open Roblox, choose its window in Luxware, then click Start scan.
+4. Return to Roblox (Alt+Tab). Capture and input run only while that window is focused.
+5. Use the binding displayed on the Bind button to activate. Your existing Windows settings
+   remain saved. On a fresh PC, mark your own avatar once before enabling aim.
+   You can also use Activate input in Luxware, then return to the game.
+6. First person uses relative camera input. Third person moves the free cursor.
+7. Ctrl+Alt+Esc stops everything. Ctrl+Shift+R resets the target; activate again afterward.
+   Look level and press Ctrl+Shift+L to set the calibrated level-return reference.
+
+To change the binding, click Bind, then press a key or mouse button INSIDE Luxware.
+Left/right/middle and Mouse 4/5 are supported, with modifiers and Hold/Toggle modes.
+In Hold mode, the input engine waits until the binding is physically held.
+
+If your outfit changed or the imported avatar views are wrong: switch the game to third person,
+scan briefly, return to Luxware, click Update my avatar, and drag tightly around YOUR body.
+This reference is saved locally. You do not select an opponent every time.
+
+Capture pauses when Luxware or another app is foreground; the preview then holds the last frame.
+For continuous visible preview, keep Luxware on another monitor while the game has focus.
+
+If the detector reports a missing runtime dependency, run Prerequisites\VC_redist.x64.exe
+(the original Microsoft Visual C++ x64 installer), then reopen Luxware.
+
+This is an unsigned Windows 10 (2004+) / Windows 11 x64 build.
+Compiled and tested with Windows ONNX Runtime under Wine on the Mac.
+Live Windows capture, hardware hotkeys, GPU performance and Roblox acceptance of input are not
+verified. Read README.md and VALIDATION.md for exact scope and troubleshooting.
+
+UPDATES: Version 1.1 checks and downloads from the official GitHub release location on launch.
+Open Updates, then Install update when ready. Disable automatic checks in Settings if wanted.
+Version 1.0 needs this new ZIP extracted manually once. Keep the app in a writable folder.

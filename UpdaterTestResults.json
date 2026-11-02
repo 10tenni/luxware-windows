@@ -1,0 +1,25 @@
+{
+  "scope": "Updater manifest, checksum, ZIP validation, filesystem replacement and forced rollback on temporary fixtures; no live app replaced.",
+  "passed": true,
+  "host": "macOS 26.7.1",
+  "checks": {
+    "semanticVersionOrdering": true,
+    "sameVersionNoUpdate": true,
+    "downgradeRejected": true,
+    "wrongAppRejected": true,
+    "externalURLRejected": true,
+    "insecureURLRejected": true,
+    "invalidHashRejected": true,
+    "versionURLMismatchRejected": true,
+    "correctArchiveHashAccepted": true,
+    "tamperedArchiveRejected": true,
+    "wrongArchiveSizeRejected": true,
+    "packageExtraction": true,
+    "zipTraversalRejected": true,
+    "caseCollisionRejected": true,
+    "failedReplacementRollsBack": true,
+    "successfulReplacementKeepsBackup": true,
+    "settingsPreserved": true,
+    "repeatInstallRejected": true
+  }
+}

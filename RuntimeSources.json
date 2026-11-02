@@ -1,0 +1,15 @@
+{
+  "onnxRuntime": {
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.23.0/microsoft.ml.onnxruntime.directml.1.23.0.nupkg",
+    "sha256": "a33ec2382b3c440bab74042a135733bb6e5085f293b908d3997688a58fe307e7"
+  },
+  "directML": {
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg",
+    "sha256": "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9"
+  },
+  "visualCppRedistributable": {
+    "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+    "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+    "note": "Original Microsoft installer; optional if its runtime is already installed. Not executed by Luxware."
+  }
+}

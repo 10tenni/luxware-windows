@@ -1,0 +1,9 @@
+build/
+build-windows/
+dist/
+*.dll
+Prerequisites/
+*.exe
+.DS_Store
+__pycache__/
+Native*Results.json

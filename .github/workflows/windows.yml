@@ -1,0 +1,50 @@
+name: Windows build and update release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch pinned official Microsoft runtime
+        run: python tools/fetch_runtime.py
+      - name: Build native Windows executable
+        run: ./build-windows.ps1
+      - name: Native core dispatch checks (injected sink, no desktop input)
+        shell: powershell
+        run: |
+          $p = Start-Process -FilePath ./build-windows/Release/Luxware.exe -ArgumentList '--core-test', 'NativeCoreTestResults.json' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Core checks failed' }
+          Get-Content NativeCoreTestResults.json
+      - name: Windows PowerShell 5.1 updater checks
+        shell: powershell
+        run: ./tests/Update.Tests.ps1 -Report NativeUpdaterTestResults.json
+      - name: Package clean release
+        run: python tools/package_windows.py --binary-dir build-windows/Release --output dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luxware-Windows-x64
+          path: |
+            dist/*.zip
+            dist/latest.json
+            Native*Results.json
+      - name: Publish tagged version and update feed
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          $version = (Get-Content release.json -Raw | ConvertFrom-Json).version
+          if ('${{ github.ref_name }}' -ne "v$version") { throw 'Tag must match release.json' }
+          gh release create "v$version" "dist/Luxware-$version-Windows-x64.zip" dist/latest.json --title "Luxware $version for Windows" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
