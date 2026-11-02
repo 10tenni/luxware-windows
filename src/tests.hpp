@@ -5,6 +5,14 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
   std::string error;
   double inferenceMS = 0, poseDistance = 0, otherDistance = 0;
   auto check = [&](const std::string &name, bool value) { checks.push_back({name, value}); };
+  struct TimerResolution {
+    bool requested = timeBeginPeriod(1) == TIMERR_NOERROR;
+    ~TimerResolution() {
+      if (requested)
+        timeEndPeriod(1);
+    }
+  } resolution; // Match the production loop's requested scheduler resolution.
+  double clockInterval = 0, clockHold = 0;
   try {
     check("resetLevelStopBindingsReserved", reservedBinding(0, 'R', 3) && reservedBinding(0, 'L', 3) &&
                                                 reservedBinding(0, VK_ESCAPE, 5) &&
@@ -31,6 +39,8 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     for (size_t i = 0; i < std::min(downs.size(), ups.size()); i++)
       hold += ups[i] - downs[i];
     hold /= std::max(size_t(1), ups.size());
+    clockInterval = interval;
+    clockHold = hold;
     check("monotonicDecimalClickTiming", downs.size() == ups.size() && downs.size() >= 27 &&
                                              downs.size() <= 33 && std::abs(interval - 1 / 23.43) < .006 &&
                                              std::abs(hold - .4 / 23.43) < .006);
@@ -125,6 +135,18 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
         return true;
       }
     }());
+    if (!recorded) {
+      Model model;
+      model.load(appFolder() / L"Models/LuxwarePlayers.onnx", false);
+      Image image;
+      image.w = image.h = 640;
+      image.bgra.resize(640 * 640 * 4, 127);
+      auto observations = model.run(image, .4);
+      check("nativeBundledModelLoadsAndProcessesPixels",
+            std::all_of(observations.begin(), observations.end(), [](const Detection &d) {
+              return std::isfinite(d.score) && d.score >= .4 && d.score <= 1 && d.box.w > 0 && d.box.h > 0;
+            }));
+    }
     if (recorded) {
       auto fixtures = appFolder() / L"Tests/Fixtures";
       auto ground = loadBMP(fixtures / L"frame17.bmp"), air = loadBMP(fixtures / L"frame16.bmp"),
@@ -214,7 +236,8 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
       out << ",";
     out << "\n\"" << checks[i].first << "\":" << (checks[i].second ? "true" : "false");
   }
-  out << "},\n\"recordedImageChecksRun\":" << (recorded ? "true" : "false")
+  out << "},\n\"clockIntervalMS\":" << clockInterval * 1000 << ",\n\"clockHoldMS\":" << clockHold * 1000
+      << ",\n\"recordedImageChecksRun\":" << (recorded ? "true" : "false")
       << ",\n\"meanModelMS\":" << inferenceMS << ",\"sameBodyFeatureDistance\":" << poseDistance
       << ",\"otherBodyFeatureDistance\":" << otherDistance
       << ",\n\"scope\":\"Controlled Windows core/input-sink regressions. Optional recorded checks use actual "
