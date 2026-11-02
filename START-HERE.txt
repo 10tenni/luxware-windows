@@ -9,7 +9,7 @@ LUXWARE FOR WINDOWS x64
    You can also use Activate input in Luxware, then return to the game.
 6. First person uses relative camera input. Third person moves the free cursor.
 7. Ctrl+Alt+Esc stops everything. Ctrl+Shift+R resets the target; activate again afterward.
-   Look level and press Ctrl+Shift+L to set the calibrated level-return reference.
+   No player detected: mouse movement stops; the activated auto clicker keeps clicking normally.
 
 To change the binding, click Bind, then press a key or mouse button INSIDE Luxware.
 Left/right/middle and Mouse 4/5 are supported, with modifiers and Hold/Toggle modes.

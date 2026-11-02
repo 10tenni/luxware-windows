@@ -140,7 +140,6 @@ inline void worker(Shared &shared) {
     Capture capture;
     Model model;
     Tracker tracker;
-    VisualBridge bridge;
     Rates fps;
     unsigned reset = shared.reset.load(), reload = ~0u;
     bool previousSingle = false;
@@ -152,7 +151,6 @@ inline void worker(Shared &shared) {
         reload = wanted;
         shared.modelReady = false;
         tracker.reset();
-        bridge.reset();
         try {
           auto path = s.modelPath.empty() ? appFolder() / L"Models/LuxwarePlayers.onnx"
                                           : std::filesystem::path(s.modelPath);
@@ -171,7 +169,6 @@ inline void worker(Shared &shared) {
         reset = shared.reset.load();
         previousSingle = s.single;
         tracker.reset();
-        bridge.reset();
       }
       HWND source = shared.source.load();
       double started = now();
@@ -208,11 +205,8 @@ inline void worker(Shared &shared) {
         if (!own.empty())
           chosen = tracker.choose(tracks, received, s.fov, s.single);
         std::optional<Detection> target;
-        if (chosen) {
-          target = chosen->d;
-          bridge.confirm(*image, *target, received);
-        } else if (!own.empty() && detections.empty())
-          target = bridge.follow(*image, received, own);
+        if (chosen)
+          target = chosen->d; // Only current neural detections may drive input.
         if (target && !target->visual) {
           target->box.x += std::clamp(chosen->vx * s.prediction, -.05, .05);
           target->box.y += std::clamp(chosen->vy * s.prediction, -.05, .05);
@@ -268,10 +262,8 @@ inline void inputLoop(
         }) {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
   ClickClock clock;
-  bool osHeld = false, heldRight = false, wasAllowed = false;
+  bool osHeld = false, heldRight = false;
   Rates clicks, moves;
-  LevelReturn level;
-  unsigned calibration = shared.calibrate.load();
   double nextMove = 0, lastHz = 0, frameTime = 0, appliedX = 0, appliedY = 0, filterX = 0, filterY = 0,
          lastMotion = 0, lastRates = 0;
   auto send = [&](DWORD flags, LONG x, LONG y) {
@@ -315,16 +307,12 @@ inline void inputLoop(
     Rect client;
     std::optional<Detection> target;
     double received;
-    bool manual;
-    double manualY;
     {
       std::lock_guard<std::mutex> l(shared.mutex);
       s = shared.settings;
       client = shared.view.client;
       target = shared.view.target;
       received = shared.view.received;
-      manual = shared.manualMoved;
-      manualY = shared.manualY;
       shared.manualMoved = false;
       shared.manualY = 0;
     }
@@ -340,20 +328,8 @@ inline void inputLoop(
       nextMove = t;
       frameTime = 0;
       appliedX = appliedY = filterX = filterY = lastMotion = 0;
-      if (wasAllowed || !shared.armed)
-        level.reset();
-      wasAllowed = false;
+
     } else {
-      wasAllowed = true;
-      if (!s.camera || !s.aim || !s.level || s.strength <= 0)
-        level.reset();
-      if (calibration != shared.calibrate.load()) {
-        calibration = shared.calibrate.load();
-        if (s.camera && s.level)
-          level.calibrate(t);
-      }
-      if (manual)
-        level.manual(manualY);
       auto action = osHeld ? ClickClock::none : clock.tick(t, s.clicks, s.cps, s.duty);
       if (action == ClickClock::down && !osHeld) {
         if (send(s.right ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_LEFTDOWN, 0, 0)) {
@@ -374,9 +350,9 @@ inline void inputLoop(
         nextMove = (nextMove > 0 ? nextMove : t) + interval;
         if (nextMove <= t)
           nextMove = t + interval;
-        bool valid = s.aim && target && t - received < .2 && s.strength > 0;
+        bool valid = s.aim && target && !target->visual && target->score >= s.confidence &&
+                     t - received < .2 && s.strength > 0;
         if (valid) {
-          level.seen(t);
           double centerX = client.x + client.w / 2, centerY = client.y + client.h / 2;
           if (frameTime != received) {
             frameTime = received;
@@ -410,7 +386,6 @@ inline void inputLoop(
                 moves.add(t);
                 appliedX += x / s.sensitivity;
                 appliedY += y / s.sensitivity;
-                level.record(y);
               }
             } else {
               double x = std::clamp(pointer.x + dx, client.x + 1, client.x + client.w - 1),
@@ -426,15 +401,7 @@ inline void inputLoop(
         } else {
           frameTime = 0;
           appliedX = appliedY = filterX = filterY = lastMotion = 0;
-          if (s.camera && s.aim && s.level && s.strength > 0) {
-            double y = level.step(t, interval);
-            if (y) {
-              if (send(MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE, 0, LONG(y)))
-                moves.add(t);
-              else
-                level.record(-y);
-            }
-          }
+          // No detections: release camera/cursor control completely. Click phases above continue.
         }
       }
     }
@@ -442,9 +409,7 @@ inline void inputLoop(
       std::lock_guard<std::mutex> l(shared.mutex);
       shared.cps = clicks.events(t);
       shared.moves = moves.events(t);
-      shared.levelStatus = level.returning    ? "Returning to calibrated level"
-                           : level.calibrated ? "Level reference active"
-                                              : "Look level, then Ctrl+Shift+L";
+      shared.levelStatus = "No player: mouse free; activated auto clicker continues";
       lastRates = t;
     }
     if (!shared.armed || !shared.scan)

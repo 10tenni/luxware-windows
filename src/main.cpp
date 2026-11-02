@@ -155,7 +155,7 @@ void arm() {
     status("Start scan first");
     return;
   }
-  if (s.aim && !state.modelReady) {
+  if (s.aim && !state.modelReady && !s.clicks) {
     status("Aim cannot start: the model is not ready. See model status below.");
     return;
   }
@@ -164,7 +164,7 @@ void arm() {
     std::lock_guard<std::mutex> l(state.mutex);
     hasOwn = !state.own.empty();
   }
-  if (s.aim && !hasOwn) {
+  if (s.aim && !hasOwn && !s.clicks) {
     status("Mark your own avatar once in third person before enabling aim");
     return;
   }
@@ -173,13 +173,11 @@ void arm() {
     return;
   }
   state.armed = true;
-  if (s.camera && s.level)
-    state.calibrate++;
   status("Input armed: focus the selected game window");
 }
 void captureBinding(int kind, int code) {
   if (reservedBinding(kind, code, ui.physicalMods)) {
-    status("That chord is reserved for Reset, Set level or Stop. Choose another binding.");
+    status("That chord is reserved for Reset or Stop. Choose another binding.");
     return;
   }
   auto s = state.config();
@@ -246,9 +244,7 @@ LRESULT CALLBACK keyboardHook(int n, WPARAM message, LPARAM data) {
         state.armed = false;
         resetSelection();
         status("Target reset: activate again to choose a new body");
-      } else if (!ui.recording && down && !repeated && (ui.physicalMods & 3) == 3 && k->vkCode == 'L') {
-        state.calibrate++;
-        status("Current view is the level reference");
+
       } else {
         auto s = state.config();
         if (!ui.recording && s.bindKind == 0 && int(k->vkCode) == s.bindCode) {
@@ -568,10 +564,11 @@ void paint(HWND window, HDC dc) {
     else if (!s.aim || s.strength <= 0)
       input = L"Active: clicker only";
     else if (!own)
-      input = L"Aim requires your saved avatar reference";
+      input = s.clicks ? L"Auto clicker active | mark your avatar to enable aiming"
+                       : L"Aim requires your saved avatar reference";
     else if (!v.target)
-      input =
-          wide(level == "Returning to calibrated level" ? level : "Active: waiting for a detected target");
+      input = s.clicks ? L"Auto clicker active | no player detected | mouse free"
+                       : L"No player detected | mouse free";
     else
       input = L"Active: following detected target";
   }
@@ -681,7 +678,7 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     HWND info =
         control(L"STATIC",
                 L"Actual rates appear below the preview. Game-friendly processing yields time to the game.\n"
-                L"Level return estimates mouse Y, not camera angle. Manual motion cancels it.\n"
+                L"No detected player: mouse movement stops; the activated auto clicker continues.\n"
                 L"Player recognition and self exclusion can still make mistakes.",
                 780, 0, w);
     MoveWindow(info, 20, 453, 500, 65, TRUE);
@@ -922,14 +919,6 @@ void command(int id, int notification) {
     status("Target reset. Activate to acquire a new entity");
     return;
   }
-  if (id == SETLEVEL) {
-    if (s.camera && state.scan) {
-      state.calibrate++;
-      status("Current game view is the level reference");
-    } else
-      status("Start scanning in First person, look level, then Ctrl+Shift+L");
-    return;
-  }
   if (id == BIND) {
     state.armed = false;
     ui.recording = !ui.recording;
@@ -1026,8 +1015,6 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
                       {ARM, L"Activate input"},
                       {SINGLE, L"One entity"},
                       {RESET, L"Reset Ctrl+Shift+R"},
-                      {LEVEL, L"Level return"},
-                      {SETLEVEL, L"Set level Ctrl+Shift+L"},
                       {SELF, L"Mark myself"},
                       {IMPORT, L"Model..."},
                       {SETTINGS, L"Settings"},
@@ -1037,8 +1024,6 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     ui.cps = control(L"EDIT", number(s.cps).c_str(), CPS, ES_AUTOHSCROLL | WS_BORDER);
     ui.duty = control(L"EDIT", number(s.duty * 100).c_str(), DUTY, ES_AUTOHSCROLL | WS_BORDER);
     if (!ui.testing) {
-      RAWINPUTDEVICE raw{1, 2, RIDEV_INPUTSINK, w};
-      ui.raw = RegisterRawInputDevices(&raw, 1, sizeof(raw)) != FALSE;
       ui.keyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboardHook, GetModuleHandleW(nullptr), 0);
       ui.mouseHook = SetWindowsHookExW(WH_MOUSE_LL, mouseHook, GetModuleHandleW(nullptr), 0);
     }
@@ -1127,19 +1112,6 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     if (!IsIconic(w))
       InvalidateRect(w, nullptr, FALSE);
     return 0;
-  }
-  case WM_INPUT: {
-    UINT bytes = 0;
-    GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, nullptr, &bytes, sizeof(RAWINPUTHEADER));
-    std::vector<uint8_t> buffer(bytes);
-    if (bytes && GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, buffer.data(), &bytes,
-                                 sizeof(RAWINPUTHEADER)) == bytes) {
-      auto raw = reinterpret_cast<RAWINPUT *>(buffer.data());
-      if (raw->header.dwType == RIM_TYPEMOUSE && raw->header.hDevice && state.armed && front(state.source) &&
-          state.config().camera && (raw->data.mouse.lLastX || raw->data.mouse.lLastY))
-        state.physical(raw->data.mouse.lLastY);
-    }
-    return DefWindowProcW(w, m, wp, lp);
   }
   case WM_KEYDOWN:
     if (wp == VK_ESCAPE && ui.marking) {

@@ -1,4 +1,4 @@
-# Luxware for Windows 1.1.1 (x64)
+# Luxware for Windows 1.1.2 (x64)
 
 This is a compiled native Windows application, using the same genuinely trained player weights as the Mac app. It is a C++/Win32 port with actual DXGI Desktop Duplication/GDI screen capture, ONNX Runtime inference and standard Windows SendInput. It is not a renamed Mac bundle, an aim trainer, a video playback system or invented detection boxes. No Python installation, API key, cloud upload or account is needed to run the packaged executable. The updater uses the built-in Windows PowerShell 5.1 and contacts GitHub for releases.
 
@@ -8,11 +8,10 @@ Extract the entire ZIP on a Windows 10 version 2004+ or Windows 11 x64 PC and ru
 
 Existing Windows settings and saved avatar views remain in your Local AppData folder. Public downloads contain no personal preset or recordings. A private ZIP may include a first-run preset; Mac Command modifiers become Windows Control. On a new PC without a preset, mark your own avatar once before aiming. Update your avatar if the outfit changes: show yourself in third person, scan briefly, return to Luxware, then use **Update my avatar** and drag around your body. This is a saved self-exclusion reference, not a repeatedly selected opponent.
 
-Press the displayed binding in the game, or click **Activate input** and return to the game. **Toggle** is press-on/press-off. **Hold** requires a physically held binding, including when manually armed first. Click **Bind**, then press a key or left/right/middle/Mouse 4/Mouse 5 button inside Luxware to change it. Modifiers are supported; reset, level and emergency chords are reserved. Generated and injected events are ignored by the binding monitor, preventing the auto clicker from toggling itself. Vendor-remapped buttons depend on what the mouse driver delivers.
+Press the displayed binding in the game, or click **Activate input** and return to the game. **Toggle** is press-on/press-off. **Hold** requires a physically held binding, including when manually armed first. Click **Bind**, then press a key or left/right/middle/Mouse 4/Mouse 5 button inside Luxware to change it. Modifiers are supported; reset and emergency chords are reserved. Generated and injected events are ignored by the binding monitor, preventing the auto clicker from toggling itself. Vendor-remapped buttons depend on what the mouse driver delivers.
 
 - **Ctrl–Alt–Esc / STOP ALL:** stop input and capture.
 - **Ctrl–Shift–R / Reset:** release the target lock and stop input; reactivate to acquire anew.
-- **Ctrl–Shift–L / Set level:** use the current view as the first-person level reference. Look level when setting it. A new activation also takes its initial reference from the current view.
 - **First person:** relative mouse correction. **Third person:** move the free desktop cursor onto the detected body.
 - **Auto clicker:** genuine left/right down/up input, decimal CPS, 1–99% duty and measured generated CPS. Turn Aim assist off for clicker-only use; that mode captures current pixels without spending inference time and labels the counter Capture FPS.
 
@@ -24,15 +23,15 @@ Normal model observations appear as red **ML** boxes with measured scores. The c
 
 Apple Vision feature prints are unavailable on Windows. This port computes a real pixel descriptor using spatial RGB, HSV histograms and gradients, for saved-self exclusion and body-appearance matching. Its distance is not equivalent to Apple's feature-print distance. It passes the supplied pose/self regression cases, but similar outfits, backgrounds and unseen poses can still cause rejection or identity mistakes. It cannot guarantee ownership or “never me.”
 
-A short optional orange **CV** continuation searches current pixels with normalized template correlation and appearance/self checks. It requires a strong match and expires within 0.20 seconds after model confirmation. Its score is correlation, not neural confidence. It is used only when there are no current neural candidates, so it does not override an ambiguous neural single-entity recovery. No invisible target box is fabricated.
+In 1.1.2, template-only continuation no longer drives the mouse. A current, sufficiently confident neural observation is required for aim movement. Tracking can remember a target ID for reacquisition, but it does not search by rotating the camera when that target is missing.
 
 ONNX Runtime requests DirectML GPU execution when enabled. If unavailable it explicitly reports CPU fallback. Requested FPS/Hz are limits; the displayed rates count work/events that actually happened. Model/capture latency and process CPU usage are measured. CPU percentage is normalized across the PC's logical processors.
 
-## Input and level return
+## Input and no-player behavior
 
 The input thread uses a monotonic clock, a high-resolution waitable timer where available, separate mouse-down/up phases, overrun handling without catch-up bursts, and tagged standard SendInput packets. Measured CPS counts successful SendInput down calls over a two-second rolling window; it is not the requested CPS or a count of all hardware clicks. At 23.43 CPS and 40% duty the requested interval/down/up phases are approximately 42.68/17.07/25.61 ms; actual phases depend on scheduling. Input is blocked on wrong focus, stale capture, missing held binding, pointer outside the game client, or an unresponsive UI heartbeat. Current-image targets must be fresh for aim movement.
 
-Level return is a **calibrated mouse-delta estimate, not a measured Roblox pitch angle**. In First person it can reverse accumulated vertical mouse deltas after a 0.35 second target-loss grace period. It is bounded in rate, duration and total reference offset; horizontal aim is left alone. A new target interrupts it and manual movement during the return cancels it. Focus loss invalidates the reference. Game sensitivity, pointer acceleration, camera pitch clamps, scripted movement or ignored input can make inversion inaccurate; reset the reference after changes. It remains disabled in Third person, with Aim assist/strength off, or when input is stopped.
+When no eligible current player is detected, the app clears pending aim correction and emits no mouse-movement events. This applies in both camera and free-cursor modes. Automatic level return is removed, including for old saved settings. The activated auto clicker keeps its normal decimal CPS/down-up timing without needing a target. Hold/Toggle, foreground-window, fresh-capture and emergency-stop rules still apply. A missing avatar reference or unavailable detector does not block clicker activation when Auto clicker is enabled; aiming waits until its requirements are satisfied.
 
 Windows SendInput can be blocked by process privilege differences, and a game can ignore accepted synthetic events. The program does not elevate itself, inject code, install an input driver, bypass anti-cheat or claim anti-ban protection. If events are rejected, keep the app and target at ordinary matching privilege levels. If event counters rise but the game ignores them, that is not proof of a working camera controller. No hidden bypass is included.
 
@@ -65,3 +64,7 @@ Bilinear RGB preprocessing reuses its 4.7 MiB tensor and caches resize coordinat
 The UI reuses its drawing buffer. Background preview updates are limited to 5 FPS, while foreground controls/preview update up to 20 FPS; this preview limit is separate from real detection FPS. Minimized redraws are skipped. The 20 Hz input-safety heartbeat remains independent. Idle input polling is reduced to 100 Hz and the active timer is one-shot rather than continuously periodic.
 
 Native test reports include a generated-image preprocessing microbenchmark, maximum pixel error, and resource-reuse checks. Those measurements are not Roblox gameplay FPS or a guarantee of performance on a particular PC.
+
+## 1.1.2 no-player change
+
+No player detected means ordinary auto clicking with a free mouse. Level return and template-only mouse correction are disabled, and obsolete level-return controls are removed. Production-dispatch regressions verify movement for a current observation, stopping after loss even with the old level setting, continued balanced click events, and no movement from stale, weak or template-only observations. Tests use an injected event sink and explicit controlled observations; they do not post events to a game.

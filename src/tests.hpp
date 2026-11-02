@@ -73,9 +73,9 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
       ReleaseDC(nullptr, screen);
     } else
       check("paintBufferReusesStorageAndReleasesObjects", false);
-    check("resetLevelStopBindingsReserved", reservedBinding(0, 'R', 3) && reservedBinding(0, 'L', 3) &&
-                                                reservedBinding(0, VK_ESCAPE, 5) &&
-                                                !reservedBinding(0, 'E', 2) && !reservedBinding(1, 3, 3));
+    check("resetStopBindingsReserved", reservedBinding(0, 'R', 3) && !reservedBinding(0, 'L', 3) &&
+                                           reservedBinding(0, VK_ESCAPE, 5) && !reservedBinding(0, 'E', 2) &&
+                                           !reservedBinding(1, 3, 3));
     ClickClock clock;
     std::vector<double> downs, ups;
     double start = now();
@@ -169,6 +169,80 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("productionDispatchBalancedClickPairs", inputDown >= 8 && inputDown == inputUp);
     check("holdReleaseStopsProductionDispatch", events.size() == releasedCount);
     check("productionEventsTaggedAgainstBindingFeedback", allTagged);
+    // Exercise detection loss using the real dispatch loop and an injected event sink.
+    // Observations here are explicit controlled inputs, not claimed neural detections.
+    Shared lossState;
+    lossState.scan = lossState.armed = true;
+    lossState.source = reinterpret_cast<HWND>(1);
+    lossState.settings.aim = lossState.settings.clicks = true;
+    lossState.settings.level = true; // Legacy saved setting must never cause movement on loss.
+    lossState.settings.smoothing = .5;
+    std::atomic<int> movementCount{0}, clickCount{0}, upCount{0};
+    std::thread lossThread([&] {
+      inputLoop(
+          lossState,
+          [&](INPUT &i) {
+            if (i.mi.dwFlags & MOUSEEVENTF_MOVE)
+              ++movementCount;
+            if (i.mi.dwFlags & MOUSEEVENTF_LEFTDOWN)
+              ++clickCount;
+            if (i.mi.dwFlags & MOUSEEVENTF_LEFTUP)
+              ++upCount;
+            return UINT(1);
+          },
+          [](HWND) { return true; }, [] { return POINT{500, 400}; });
+    });
+    auto lossPump = [&](double duration, std::optional<Detection> observation, double age = 0.) {
+      double begin = now();
+      while (now() - begin < duration) {
+        double t = now();
+        lossState.heartbeat = t;
+        {
+          std::lock_guard<std::mutex> lock(lossState.mutex);
+          lossState.view.received = t - age;
+          lossState.view.client = {0, 0, 1000, 800};
+          lossState.view.target = observation;
+        }
+        Sleep(2);
+      }
+    };
+    lossPump(.12, {});
+    bool initiallyStill = movementCount == 0 && clickCount > 0;
+    Detection observed{{.7, .7, .1, .1}, .9f, 7, false, {}};
+    lossPump(.10, observed);
+    bool movesWhenObserved = movementCount > 0;
+    {
+      std::lock_guard<std::mutex> lock(lossState.mutex);
+      lossState.view.target.reset();
+    }
+    // Let any already-dispatched event finish before observing the no-target interval.
+    lossPump(.02, {});
+    int beforeLossMoves = movementCount, beforeLossClicks = clickCount;
+    lossPump(.65, {});
+    bool stillAfterLoss = movementCount == beforeLossMoves;
+    bool clicksAfterLoss = clickCount - beforeLossClicks >= 8;
+    observed.visual = true;
+    lossPump(.10, observed);
+    bool templateCannotMove = movementCount == beforeLossMoves;
+    observed.visual = false;
+    observed.score = .05f;
+    lossPump(.10, observed);
+    bool weakCannotMove = movementCount == beforeLossMoves;
+    observed.score = .9f;
+    lossPump(.10, observed, .3);
+    bool staleCannotMove = movementCount == beforeLossMoves;
+    lossState.armed = false;
+    lossPump(.04, {});
+    lossState.quit = true;
+    lossThread.join();
+    check("noPlayerStartsAsOrdinaryClicker", initiallyStill);
+    check("currentPlayerEnablesMovement", movesWhenObserved);
+    check("playerLossStopsMovementDespiteLegacyLevelSetting", stillAfterLoss);
+    check("playerLossKeepsAutoClicksRunning", clicksAfterLoss);
+    check("templateOnlyObservationCannotMoveMouse", templateCannotMove);
+    check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
+    check("staleObservationCannotMoveMouse", staleCannotMove);
+    check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
     LevelReturn level;
     level.calibrate(1);
     level.record(180);

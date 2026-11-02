@@ -163,8 +163,7 @@ struct Settings {
   std::wstring modelPath;
 };
 inline bool reservedBinding(int kind, int code, int mods) {
-  return kind == 0 &&
-         (((mods & 3) == 3 && (code == 'R' || code == 'L')) || ((mods & 5) == 5 && code == VK_ESCAPE));
+  return kind == 0 && (((mods & 3) == 3 && code == 'R') || ((mods & 5) == 5 && code == VK_ESCAPE));
 }
 inline Settings loadSettings() {
   Settings s;
