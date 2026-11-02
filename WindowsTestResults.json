@@ -1,6 +1,10 @@
 {
   "passed": true,
   "checks": {
+    "reusedPreprocessingMatchesScalarPixels": true,
+    "preprocessingStorageStableAcrossResizes": true,
+    "processingBudgetLeavesIdleTime": true,
+    "paintBufferReusesStorageAndReleasesObjects": true,
     "resetLevelStopBindingsReserved": true,
     "monotonicDecimalClickTiming": true,
     "zeroCatchupBurstAfterStall": true,
@@ -25,13 +29,17 @@
     "templateContinuationExpires": true,
     "realObjectScoresNotConstant100Percent": true
   },
-  "clockIntervalMS": 42.7205,
-  "clockHoldMS": 17.8905,
+  "preprocessReferenceMS": 3.9205,
+  "preprocessOptimizedMS": 1.34313,
+  "preprocessMaximumPixelError": 0,
+  "preprocessChecksum": 8.89139,
+  "clockIntervalMS": 42.7286,
+  "clockHoldMS": 17.8543,
   "recordedImageChecksRun": true,
-  "meanModelMS": 56.9496,
+  "meanModelMS": 55.6432,
   "sameBodyFeatureDistance": 0.773895,
   "otherBodyFeatureDistance": 0.905899,
   "scope": "Controlled Windows core/input-sink regressions. Optional recorded checks use actual ONNX Runtime on development images; portable tracker, pixel appearance, timing and level-return regression. No SendInput calls, screen capture, live game input or physical hotkeys tested.",
-  "verificationHost": "MSVC-built Windows executable under Wine 11 on Apple Silicon, with private recorded fixtures",
+  "verificationHost": "MinGW Windows 1.1.1 executable under Wine 11 on Apple Silicon; private recorded fixtures",
   "nativeWindowsLiveTested": false
 }
