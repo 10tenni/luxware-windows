@@ -155,9 +155,9 @@ public:
 };
 struct Settings {
   bool camera = true, hold = false, aim = true, clicks = true, right = false, single = false, level = true,
-       gpu = true, gameFriendly = true;
+       gpu = true, gameFriendly = true, snap = true;
   double cps = 23.43, duty = .4, strength = 1, smoothing = 0, sensitivity = 1, fov = .5, confidence = .4,
-         prediction = 0, fps = 120, hz = 240;
+         prediction = 0, fps = 120, hz = 1000;
   int bindKind = 0, bindCode = VK_F6, bindMods = 0;
   int avatarNext = 0;
   std::wstring modelPath;
@@ -187,6 +187,10 @@ inline Settings loadSettings() {
   s.level = num(L"level", 1) != 0;
   s.gpu = num(L"gpu", 1) != 0;
   s.gameFriendly = num(L"gameFriendly", 1) != 0;
+  wchar_t savedSnap[16]{};
+  GetPrivateProfileStringW(L"Luxware", L"snap", L"", savedSnap, 16, file.c_str());
+  bool migrateSnap = !savedSnap[0];
+  s.snap = num(L"snap", 1) != 0;
   s.cps = std::clamp(num(L"cps", 23.43), .1, 200.);
   s.duty = std::clamp(num(L"duty", .4), .01, .99);
   s.strength = std::clamp(num(L"strength", 1), 0., 1.);
@@ -196,7 +200,12 @@ inline Settings loadSettings() {
   s.confidence = std::clamp(num(L"confidence", .4), .1, .99);
   s.prediction = std::clamp(num(L"prediction", 0), 0., .1);
   s.fps = std::clamp(num(L"fps", 120), 5., 240.);
-  s.hz = std::clamp(num(L"hz", 240), 5., 240.);
+  s.hz = std::clamp(num(L"hz", 1000), 5., 1000.);
+  if (migrateSnap) {
+    s.strength = 1;
+    s.smoothing = 0;
+    s.hz = 1000;
+  }
   s.bindKind = int(num(L"bindKind", 0));
   s.bindCode = int(num(L"bindCode", VK_F6));
   s.bindMods = int(num(L"bindMods", 0)) & 15;
@@ -226,6 +235,7 @@ inline void saveSettings(const Settings &s) {
   put(L"level", s.level);
   put(L"gpu", s.gpu);
   put(L"gameFriendly", s.gameFriendly);
+  put(L"snap", s.snap);
   put(L"cps", s.cps);
   put(L"duty", s.duty);
   put(L"strength", s.strength);

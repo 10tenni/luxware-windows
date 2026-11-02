@@ -278,7 +278,7 @@ public:
     for (auto &m : memory)
       if (t >= m.time && t - m.time < .35)
         old.push_back(m);
-    if (single && reference && t - reference->time <= 2 &&
+    if (single && reference && t - reference->time <= 6 &&
         std::none_of(old.begin(), old.end(), [&](auto &m) { return m.d.id == reference->d.id; }))
       old.push_back(*reference);
     struct Pair {
@@ -320,23 +320,24 @@ public:
         if (best) {
           matched[best->i] = j;
           used[j] = true;
-        } else if (reference && reference->d.feature && anchor && t - reference->time <= 2) {
+        } else if (reference && reference->d.feature && anchor && t - reference->time <= 6) {
           std::vector<std::pair<double, int>> possibles;
           for (int i = 0; i < int(ds.size()); i++)
             if (ds[i].feature) {
               double recent = distance(*ds[i].feature, *reference->d.feature),
                      initial = distance(*ds[i].feature, *anchor);
-              if (recent < .80 && initial < .85 &&
-                  std::hypot(ds[i].box.cx() - reference->d.box.cx(), ds[i].box.cy() - reference->d.box.cy()) <
-                      .65 &&
-                  std::max(ds[i].box.h, reference->d.box.h) /
-                          std::max(.001, std::min(ds[i].box.h, reference->d.box.h)) <
-                      4)
+              double separation =
+                  std::hypot(ds[i].box.cx() - reference->d.box.cx(), ds[i].box.cy() - reference->d.box.cy());
+              bool appearance =
+                  separation < .65 ? recent < .80 && initial < .85 : recent < .65 && initial < .75;
+              if (appearance && std::max(ds[i].box.h, reference->d.box.h) /
+                                        std::max(.001, std::min(ds[i].box.h, reference->d.box.h)) <
+                                    4)
                 possibles.push_back({std::max(recent, initial), i});
             }
           std::sort(possibles.begin(), possibles.end());
           if (!possibles.empty() &&
-              (possibles.size() == 1 || possibles[1].first - possibles[0].first >= .12)) {
+              (possibles.size() == 1 || possibles[1].first - possibles[0].first >= .15)) {
             matched[possibles[0].second] = j;
             used[j] = true;
           }
@@ -388,7 +389,7 @@ public:
           return d;
         }
     if (single && selected) {
-      note = reference && t - reference->time <= 2 ? "Target lost: checking the same appearance"
+      note = reference && t - reference->time <= 6 ? "Target lost: checking the same appearance"
                                                    : "Target lost: Reset Ctrl+Shift+R to choose again";
       return {};
     }
@@ -497,6 +498,7 @@ public:
 };
 
 struct AimMemory {
+  double snapFrame = 0;
   double frameTime = 0, appliedX = 0, appliedY = 0, filterX = 0, filterY = 0, lastMotion = 0;
   int targetID = 0;
   bool camera = true;

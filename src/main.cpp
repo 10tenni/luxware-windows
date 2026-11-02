@@ -39,6 +39,7 @@ enum {
   PREVIEW,
   MAINSENS,
   MAINHZ,
+  SNAP,
   SLIDER = 300
 };
 constexpr UINT APP_BIND = WM_APP + 1, APP_SAVE = WM_APP + 2;
@@ -375,6 +376,7 @@ void layout() {
   if (!state.config().camera)
     ShowWindow(GetDlgItem(ui.window, MAINSENS), SW_HIDE);
   place(MAINHZ, 30, 550, 330, 28);
+  place(SNAP, 30, 578, 330, 30);
   place(CLICKS, 30, 637, 174);
   place(BUTTON, 252, 637, 108, 130);
   place(CPS, 70, 684, 92);
@@ -555,8 +557,9 @@ void paint(HWND window, HDC dc) {
     text(dc, 32, 438 - ui.scroll, L"No player: your mouse stays free.", muted, ui.mono);
   }
   card(496, 118, L"Tracking frequency");
+  text(dc, 32, 530 - ui.scroll, L"Polling limit; not detection FPS", muted, ui.mono);
   text(dc, 286, 508 - ui.scroll, number(s.hz, 0) + L" Hz", red, ui.mono);
-  text(dc, 32, 584 - ui.scroll, L"Movement limit; detection FPS is shown below.", muted, ui.mono);
+
   card(628, 124, L"");
   text(dc, 30, 690 - ui.scroll, L"CPS");
   text(dc, 194, 690 - ui.scroll, L"Duty %");
@@ -707,11 +710,11 @@ void drawButton(DRAWITEMSTRUCT *d) {
     return;
   }
   bool checkbox = d->CtlID == AIM || d->CtlID == SINGLE || d->CtlID == LEVEL || d->CtlID == CLICKS ||
-                  d->CtlID == GPU || d->CtlID == AUTOUPDATE || d->CtlID == GAMEFRIENDLY;
+                  d->CtlID == GPU || d->CtlID == AUTOUPDATE || d->CtlID == GAMEFRIENDLY || d->CtlID == SNAP;
   bool checked = (d->CtlID == AIM && s.aim) || (d->CtlID == SINGLE && s.single) ||
                  (d->CtlID == LEVEL && s.level) || (d->CtlID == CLICKS && s.clicks) ||
                  (d->CtlID == GPU && s.gpu) || (d->CtlID == AUTOUPDATE && updates.automatic) ||
-                 (d->CtlID == GAMEFRIENDLY && s.gameFriendly);
+                 (d->CtlID == GAMEFRIENDLY && s.gameFriendly) || (d->CtlID == SNAP && s.snap);
   RECT r = d->rcItem;
   bool primary = d->CtlID == SCAN || d->CtlID == ARM;
   COLORREF color = primary ? RGB(187, 39, 64) : RGB(32, 38, 49);
@@ -751,7 +754,7 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
         L"Aim strength",         L"Smoothing",        L"Camera sensitivity", L"Acquire FOV",
         L"Detection confidence", L"Target lead (ms)", L"Analysis FPS limit", L"Movement Hz limit"};
     auto s = state.config();
-    int lows[] = {0, 0, 10, 5, 10, 0, 5, 5}, highs[] = {100, 95, 300, 71, 99, 100, 240, 240};
+    int lows[] = {0, 0, 10, 5, 10, 0, 5, 5}, highs[] = {100, 95, 300, 71, 99, 100, 240, 1000};
     int values[] = {int(s.strength * 100),
                     int(s.smoothing * 100),
                     int(s.sensitivity * 100),
@@ -772,6 +775,10 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
       MoveWindow(slider, 200, 20 + i * 43, 310, 35, TRUE);
       SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(lows[i], highs[i]));
       SendMessageW(slider, TBM_SETPOS, TRUE, values[i]);
+      if (i == 1) {
+        EnableWindow(slider, !s.snap);
+        SetWindowTextW(label, s.snap ? L"Smoothing (SNAP)" : L"Smoothing");
+      }
       ui.sliders.push_back(slider);
     }
     MoveWindow(button(L"GPU (DirectML)", GPU, w), 20, 378, 190, 30, TRUE);
@@ -1128,6 +1135,20 @@ void command(int id, int notification) {
   else if (id == AIM) {
     s.aim = !s.aim;
     resetSelection();
+  } else if (id == SNAP) {
+    s.snap = !s.snap;
+    if (s.snap) {
+      s.strength = 1;
+      s.smoothing = 0;
+      s.hz = 1000;
+    }
+    if (ui.sliders.size() == 8) {
+      EnableWindow(ui.sliders[1], !s.snap);
+      SetWindowTextW(GetDlgItem(ui.settings, 701), s.snap ? L"Smoothing (SNAP)" : L"Smoothing");
+      SendMessageW(ui.sliders[0], TBM_SETPOS, TRUE, int(s.strength * 100));
+      SendMessageW(ui.sliders[1], TBM_SETPOS, TRUE, int(s.smoothing * 100));
+      SendMessageW(ui.sliders[7], TBM_SETPOS, TRUE, int(s.hz));
+    }
   } else if (id == CLICKS)
     s.clicks = !s.clicks;
   else if (id == SINGLE) {
@@ -1191,13 +1212,14 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
                       {THIRDTAB, L"THIRD PERSON"},
                       {HOLDMODE, L"Hold"},
                       {TOGGLEMODE, L"Toggle"},
-                      {PREVIEW, L"Preview"}})
+                      {PREVIEW, L"Preview"},
+                      {SNAP, L"Snap (no smoothing)"}})
       button(pair.second, pair.first);
     HWND sens = control(TRACKBAR_CLASSW, L"", MAINSENS, TBS_NOTICKS);
     HWND hz = control(TRACKBAR_CLASSW, L"", MAINHZ, TBS_NOTICKS);
     SendMessageW(sens, TBM_SETRANGE, TRUE, MAKELPARAM(10, 300));
     SendMessageW(sens, TBM_SETPOS, TRUE, int(s.sensitivity * 100));
-    SendMessageW(hz, TBM_SETRANGE, TRUE, MAKELPARAM(5, 240));
+    SendMessageW(hz, TBM_SETRANGE, TRUE, MAKELPARAM(5, 1000));
     SendMessageW(hz, TBM_SETPOS, TRUE, int(s.hz));
     ui.cps = control(L"EDIT", number(s.cps).c_str(), CPS, ES_AUTOHSCROLL | WS_BORDER);
     ui.duty = control(L"EDIT", number(s.duty * 100).c_str(), DUTY, ES_AUTOHSCROLL | WS_BORDER);
@@ -1479,6 +1501,14 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   std::vector<std::pair<std::string, bool>> checks;
   auto check = [&](const std::string &name, bool ok) { checks.push_back({name, ok}); };
   check("startsInCompactView", !ui.previewVisible);
+  check("snapEnabledByDefault", state.config().snap);
+  command(SNAP, 0);
+  check("snapCanBeDisabled", !state.config().snap);
+  command(SNAP, 0);
+  check("snapPresetDisablesSmoothingAndRaisesInputLimit",
+        state.config().snap && state.config().smoothing == 0 && state.config().strength == 1 &&
+            state.config().hz == 1000);
+
   command(THIRDTAB, 0);
   check("thirdPersonTabChangesEngineMode",
         !state.config().camera && !(GetWindowLongPtrW(GetDlgItem(window, MAINSENS), GWL_STYLE) & WS_VISIBLE));

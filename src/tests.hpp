@@ -244,6 +244,91 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
     check("staleObservationCannotMoveMouse", staleCannotMove);
     check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
+    // Real dispatch path with a fixed producer frame: Snap must not tween/reapply that frame.
+    Shared snapState;
+    snapState.scan = snapState.armed = true;
+    snapState.source = reinterpret_cast<HWND>(1);
+    snapState.settings.snap = true;
+    snapState.settings.smoothing = .9;
+    snapState.settings.strength = 1;
+    snapState.settings.hz = 1000;
+    snapState.settings.sensitivity = 1;
+    snapState.view.client = {0, 0, 1000, 800};
+    snapState.view.received = now();
+    snapState.view.target = Detection{{.8, .7, .1, .1}, .9f, 1, false, {}};
+    std::atomic<int> snapMoves{0}, firstX{0}, firstY{0};
+    std::thread snapThread([&] {
+      inputLoop(
+          snapState,
+          [&](INPUT &input) {
+            if (input.mi.dwFlags & MOUSEEVENTF_MOVE) {
+              if (snapMoves.fetch_add(1) == 0) {
+                firstX = input.mi.dx;
+                firstY = input.mi.dy;
+              }
+            }
+            return UINT(1);
+          },
+          [](HWND) { return true; }, [] { return POINT{500, 400}; });
+    });
+    auto snapPump = [&](double seconds) {
+      double begin = now();
+      while (now() - begin < seconds) {
+        snapState.heartbeat = now();
+        Sleep(2);
+      }
+    };
+    snapPump(.10);
+    bool directSnap = snapMoves == 1 && firstX == 350 && firstY == 200;
+    {
+      std::lock_guard<std::mutex> lock(snapState.mutex);
+      snapState.view.received = now();
+      snapState.view.target = Detection{{.1, .2, .1, .1}, .9f, 1, false, {}};
+    }
+    snapPump(.08);
+    bool followsNewFrame = snapMoves == 2;
+    {
+      std::lock_guard<std::mutex> lock(snapState.mutex);
+      snapState.view.received = now();
+      snapState.view.target.reset();
+    }
+    snapPump(.10);
+    bool stopsOnLoss = snapMoves == 2;
+    snapState.armed = false;
+    snapPump(.02);
+    snapState.quit = true;
+    snapThread.join();
+    check("snapUsesOneDirectCorrectionWithoutSmoothing", directSnap);
+    check("snapWaitsForNewFrameBeforeNextCorrection", followsNewFrame);
+    check("snapStillStopsMovementWhenPlayerDisappears", stopsOnLoss);
+    auto primeLock = [](Tracker &tracker) {
+      Feature f{};
+      Detection body{{.8, .4, .1, .2}, .9f, 0, false, f};
+      tracker.update({body}, 1, true);
+      auto selected = tracker.choose(tracker.update({body}, 1.03, true), 1.03, .71, true);
+      tracker.choose(tracker.update({}, 1.06, true), 1.06, .71, true);
+      return selected->d.id;
+    };
+    Tracker acrossScreen;
+    int remembered = primeLock(acrossScreen);
+    Feature signature{};
+    Detection reappeared{{0, .4, .1, .2}, .9f, 0, false, signature};
+    auto firstReturn = acrossScreen.choose(acrossScreen.update({reappeared}, 1.2, true), 1.2, .71, true);
+    auto secondReturn = acrossScreen.choose(acrossScreen.update({reappeared}, 1.23, true), 1.23, .71, true);
+    check("oneEntityReacquiresAcrossViewportAfterConfirmation",
+          !firstReturn && secondReturn && secondReturn->d.id == remembered);
+    Tracker expiredLock;
+    primeLock(expiredLock);
+    expiredLock.choose(expiredLock.update({reappeared}, 8, true), 8, .71, true);
+    check("expiredIdentityDoesNotSilentlySwitchToNewPlayer",
+          !expiredLock.choose(expiredLock.update({reappeared}, 8.03, true), 8.03, .71, true));
+    Tracker ambiguousLock;
+    primeLock(ambiguousLock);
+    Detection lookalike = reappeared;
+    lookalike.box.x = .15;
+    ambiguousLock.choose(ambiguousLock.update({reappeared, lookalike}, 1.2, true), 1.2, .71, true);
+    check("acrossViewportLookalikesKeepLockPaused",
+          !ambiguousLock.choose(ambiguousLock.update({reappeared, lookalike}, 1.23, true), 1.23, .71, true));
     MotionHistory history;
     history.record(1.01, 20, -10);
     history.record(1.04, 30, 5);

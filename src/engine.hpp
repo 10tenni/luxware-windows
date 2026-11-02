@@ -309,7 +309,7 @@ inline void inputLoop(
   MotionHistory motion;
   FrameLead lead;
   HWND motionSource = nullptr;
-  bool motionCamera = true;
+  bool motionCamera = true, motionSnap = true;
   double motionWidth = 0, motionHeight = 0;
   double nextMove = 0, lastHz = 0, lastRates = 0;
   auto &frameTime = correction.frameTime, &appliedX = correction.appliedX, &appliedY = correction.appliedY,
@@ -367,11 +367,13 @@ inline void inputLoop(
     POINT pointer = cursor();
     HWND source = shared.source.load();
     if (source != motionSource || client.w != motionWidth || client.h != motionHeight ||
-        motionCamera != s.camera) {
+        motionCamera != s.camera || motionSnap != s.snap) {
+      correction.clear();
       motion.clear();
       lead.clear();
       motionSource = source;
       motionCamera = s.camera;
+      motionSnap = s.snap;
       motionWidth = client.w;
       motionHeight = client.h;
     }
@@ -404,7 +406,7 @@ inline void inputLoop(
         lastHz = s.hz;
       }
       if (t >= nextMove) {
-        double interval = 1 / std::clamp(s.hz, 5., 240.);
+        double interval = 1 / std::clamp(s.hz, 5., 1000.);
         nextMove = (nextMove > 0 ? nextMove : t) + interval;
         if (nextMove <= t)
           nextMove = t + interval;
@@ -413,54 +415,67 @@ inline void inputLoop(
         if (valid) {
           double centerX = client.x + client.w / 2, centerY = client.y + client.h / 2;
           correction.observe(target->id, s.camera, received);
-          double ex = client.x + target->box.cx() * client.w - (s.camera ? centerX : pointer.x),
-                 ey = client.y + target->box.cy() * client.h - (s.camera ? centerY : pointer.y);
-          lead.observe(target->id, s.camera, received, target->box.cx() * client.w - client.w / 2,
-                       target->box.cy() * client.h - client.h / 2, motion);
-          auto forecast =
-              lead.offset(t - received, s.prediction, std::clamp(target->box.w * client.w * .5, 8., 60.),
-                          std::clamp(target->box.h * client.h * .35, 8., 60.));
-          ex += forecast.first;
-          ey += forecast.second;
-          if (s.camera) {
-            auto inFlight = motion.after(received, t);
-            ex -= inFlight.first;
-            ey -= inFlight.second;
-          }
-          double dt = lastMotion ? std::min(.1, t - lastMotion) : interval;
-          lastMotion = t;
-          double alpha = s.smoothing == 0 ? 1 : 1 - std::exp(-dt / (.002 + s.smoothing * .1));
-          filterX += alpha * (ex - filterX);
-          filterY += alpha * (ey - filterY);
-          double dist = std::hypot(filterX, filterY),
-                 scale = std::min(1., 180 / std::max(.001, dist)) * s.strength, dx = filterX * scale,
-                 dy = filterY * scale;
-          if (s.camera) {
-            auto bound = [](double p, double r) {
-              return p * r > 0 ? (r > 0 ? std::min(p, r) : std::max(p, r)) : 0;
-            };
-            dx = bound(dx, ex);
-            dy = bound(dy, ey);
-          }
-          if (dist > 3) {
+          if (!s.snap || correction.snapFrame != received) {
+            double ex = client.x + target->box.cx() * client.w - (s.camera ? centerX : pointer.x),
+                   ey = client.y + target->box.cy() * client.h - (s.camera ? centerY : pointer.y);
+            lead.observe(target->id, s.camera, received, target->box.cx() * client.w - client.w / 2,
+                         target->box.cy() * client.h - client.h / 2, motion);
+            auto forecast =
+                lead.offset(t - received, s.prediction, std::clamp(target->box.w * client.w * .5, 8., 60.),
+                            std::clamp(target->box.h * client.h * .35, 8., 60.));
+            ex += forecast.first;
+            ey += forecast.second;
             if (s.camera) {
-              LONG x = LONG(std::lround(dx * s.sensitivity)), y = LONG(std::lround(dy * s.sensitivity));
-              if ((x || y) && send(MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE, x, y)) {
-                moves.add(t);
-                appliedX += x / s.sensitivity;
-                appliedY += y / s.sensitivity;
-                motion.record(now(), x / s.sensitivity, y / s.sensitivity);
-              }
-            } else {
-              double x = std::clamp(pointer.x + dx, client.x + 1, client.x + client.w - 1),
-                     y = std::clamp(pointer.y + dy, client.y + 1, client.y + client.h - 1);
-              int vx = GetSystemMetrics(SM_XVIRTUALSCREEN), vy = GetSystemMetrics(SM_YVIRTUALSCREEN),
-                  vw = GetSystemMetrics(SM_CXVIRTUALSCREEN), vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-              LONG ax = LONG(std::lround((x - vx) * 65535 / std::max(1, vw - 1))),
-                   ay = LONG(std::lround((y - vy) * 65535 / std::max(1, vh - 1)));
-              if (send(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, ax, ay))
-                moves.add(t);
+              auto inFlight = motion.after(received, t);
+              ex -= inFlight.first;
+              ey -= inFlight.second;
             }
+            double dt = lastMotion ? std::min(.1, t - lastMotion) : interval;
+            lastMotion = t;
+            double alpha = s.snap || s.smoothing == 0 ? 1 : 1 - std::exp(-dt / (.002 + s.smoothing * .1));
+            filterX += alpha * (ex - filterX);
+            filterY += alpha * (ey - filterY);
+            double limit = s.snap ? (s.camera ? std::min(960., std::hypot(client.w, client.h) * .75)
+                                              : std::hypot(client.w, client.h))
+                                  : 180.;
+            double dist = std::hypot(filterX, filterY),
+                   scale = std::min(1., limit / std::max(.001, dist)) * s.strength, dx = filterX * scale,
+                   dy = filterY * scale;
+            if (s.camera) {
+              auto bound = [](double p, double r) {
+                return p * r > 0 ? (r > 0 ? std::min(p, r) : std::max(p, r)) : 0;
+              };
+              dx = bound(dx, ex);
+              dy = bound(dy, ey);
+            }
+            double deadzone = s.snap ? 1. : 3.;
+            bool snapDone = dist <= deadzone;
+            if (dist > deadzone) {
+              if (s.camera) {
+                LONG x = LONG(std::lround(dx * s.sensitivity)), y = LONG(std::lround(dy * s.sensitivity));
+                if ((x || y) && send(MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE, x, y)) {
+                  moves.add(t);
+                  appliedX += x / s.sensitivity;
+                  appliedY += y / s.sensitivity;
+                  motion.record(now(), x / s.sensitivity, y / s.sensitivity);
+                  snapDone = true;
+                } else if (!x && !y)
+                  snapDone = true;
+              } else {
+                double x = std::clamp(pointer.x + dx, client.x + 1, client.x + client.w - 1),
+                       y = std::clamp(pointer.y + dy, client.y + 1, client.y + client.h - 1);
+                int vx = GetSystemMetrics(SM_XVIRTUALSCREEN), vy = GetSystemMetrics(SM_YVIRTUALSCREEN),
+                    vw = GetSystemMetrics(SM_CXVIRTUALSCREEN), vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+                LONG ax = LONG(std::lround((x - vx) * 65535 / std::max(1, vw - 1))),
+                     ay = LONG(std::lround((y - vy) * 65535 / std::max(1, vh - 1)));
+                if (send(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, ax, ay)) {
+                  moves.add(t);
+                  snapDone = true;
+                }
+              }
+            }
+            if (s.snap && snapDone)
+              correction.snapFrame = received;
           }
         } else {
           correction.clear();

@@ -39,3 +39,9 @@ Hold/Toggle for activation mode, and the red sliders for sensitivity/movement ra
 for One entity, Reset, Update my avatar, capture-window selection and detector controls.
 Preview expands the actual capture/detection preview. Settings contains remaining tuning.
 Player lock now requires two consecutive neural observations. No detection still means no movement.
+
+1.2.3 SNAP: Snap (no smoothing) defaults on and uses a full-strength response preset.
+1000 Hz is a 1 ms input-check target, NOT 1 ms detection latency. Actual FPS/ms remain measured.
+A player behind the camera cannot be detected. One-entity matching can reacquire a strong
+unique match when it returns into view within six seconds. No visible detection means no
+automatic turning; clicking continues while activated.
