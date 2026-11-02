@@ -26,7 +26,7 @@ If the detector reports a missing runtime dependency, run Prerequisites\VC_redis
 (the original Microsoft Visual C++ x64 installer), then reopen Luxware.
 
 This is an unsigned Windows 10 (2004+) / Windows 11 x64 build.
-Compiled and tested with Windows ONNX Runtime under Wine on the Mac.
+Built with MSVC on Windows. Native core and updater tests pass; recorded regressions also run under Wine.
 Live Windows capture, hardware hotkeys, GPU performance and Roblox acceptance of input are not
 verified. Read README.md and VALIDATION.md for exact scope and troubleshooting.
 

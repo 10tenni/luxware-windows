@@ -25,10 +25,13 @@
     "templateContinuationExpires": true,
     "realObjectScoresNotConstant100Percent": true
   },
-  "meanModelMS": 300.666,
+  "clockIntervalMS": 42.7205,
+  "clockHoldMS": 17.8905,
+  "recordedImageChecksRun": true,
+  "meanModelMS": 56.9496,
   "sameBodyFeatureDistance": 0.773895,
   "otherBodyFeatureDistance": 0.905899,
-  "scope": "Windows executable running actual bundled ONNX Runtime CPU on recorded development images; portable tracker, pixel appearance, timing and level-return regression. No SendInput calls, screen capture, live game input or physical hotkeys tested.",
-  "verificationHost": "Wine 11 on Apple Silicon macOS",
+  "scope": "Controlled Windows core/input-sink regressions. Optional recorded checks use actual ONNX Runtime on development images; portable tracker, pixel appearance, timing and level-return regression. No SendInput calls, screen capture, live game input or physical hotkeys tested.",
+  "verificationHost": "MSVC-built Windows executable under Wine 11 on Apple Silicon, with private recorded fixtures",
   "nativeWindowsLiveTested": false
 }

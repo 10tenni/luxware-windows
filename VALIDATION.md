@@ -1,6 +1,8 @@
 # Windows build verification
 
-The actual x86-64 Windows PE executable was cross-compiled with MinGW-w64 GCC 16.2. It includes an embedded Windows/DPI manifest, app icon and version resource. The same executable was run with its packaged Windows ONNX Runtime DLL under Wine 11 on the Apple Silicon Mac. That is compatibility testing, **not native Windows or live Roblox testing**.
+The 1.1 public release is built with MSVC/CMake on a GitHub Windows Server 2022 runner. Thirteen native core checks pass, including actual bundled ONNX Runtime inference on generated neutral pixels and the production input loop through an injected sink. Nineteen updater checks pass under Windows PowerShell 5.1, including checksum rejection, ZIP traversal/case collisions, settings/unrelated-file preservation, and rollback after a partial replacement. Reports are included in the native release ZIP. These do not send mouse events to a game.
+
+The earlier 1.0 executable and 1.1 cross-build were also built with MinGW and exercised under Wine on Apple Silicon. Full recorded-body regression checks use real images kept locally for privacy. Native Windows build/tests and Wine recorded-image inference are separate verification scopes; neither is a live Roblox test.
 
 ## Controlled checks
 
@@ -20,10 +22,10 @@ Native Windows DXGI/GDI capture, DirectML hardware/driver behavior, real keyboar
 
 The port uses a pixel descriptor and current-image correlation, rather than unavailable Apple Vision feature prints. Identical outfits, occlusion, camera changes, tiny bodies and model false positives/misses remain limitations. Level return has no direct knowledge of game pitch. No permanent lock, flawless self exclusion or equivalent-to-reference-video PvP claim is made.
 
-Run `Run-Self-Tests.cmd` on the PC for a local report. The included build-time WindowsTestResults.json records the verified controlled run and host scope. The native Visual Studio/CMake project is supplied; the delivered binary was built with the cross-build script, not Visual Studio.
+Run `Run-Self-Tests.cmd` on the PC for a local report. The included build-time WindowsTestResults.json records the verified controlled run and host scope. The supplied CMake project is used by the native Windows release workflow; a cross-build script is also provided.
 
 ## 1.1 updater and fixes
 
 The updater test script exercises semantic versions, HTTPS/repository URL restrictions, malformed manifests, hash/size rejection, ZIP extraction/traversal/case collision rejection, replacement and rollback after an injected failure. Temporary fixtures contain no running application. See UpdaterTestResults.json for the host and scope; native CI reports are named NativeUpdaterTestResults.json and NativeCoreTestResults.json when available. Full recorded-image regression fixtures are kept out of the public GitHub release for privacy. The repository CI runs --core-test, which explicitly reports recordedImageChecksRun=false. Full private regression runs use --self-test.
 
-Live Windows installation of a running app, restart behavior, endpoint protection and real gameplay still require a Windows-PC test. The same model weights are retained; this version makes no new accuracy claim.
+Replacing/restarting a running installation, endpoint protection, live capture and real gameplay still require a Windows-PC test. The same model weights are retained; this version makes no new accuracy claim.
