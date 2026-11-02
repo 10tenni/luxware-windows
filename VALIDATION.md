@@ -51,3 +51,5 @@ Self-exclusion continuation has three additional controlled tests: small gradual
 ## 1.2.2 timestamped camera-input history
 
 New tests cover excluding pre-capture input from compensation, expiring/clearing history, static settling at several capture-to-result delays and moving-target error in an idealized linear-camera simulation. The simulation is explicit controlled test data, not fabricated detector output, game footage or evidence of matching the reference program. Native production dispatch, no-target click behavior, actual ONNX inference and hidden UI controls are checked separately by the existing suites.
+
+The final delay model runs serial capture/inference rather than queueing parallel detections. Its moving case explicitly enables optional lead; static cases leave it off. Further tests check separation of scene motion from accepted camera input, disabled prediction at zero, free-cursor motion without camera subtraction, and resets for new identities/discontinuous jumps. These are controlled control-loop tests, not invented neural detections or live-game accuracy measurements.

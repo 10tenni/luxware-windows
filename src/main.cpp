@@ -763,6 +763,10 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     ui.sliders.clear();
     for (int i = 0; i < 8; i++) {
       HWND label = control(L"STATIC", names[i], 700 + i, 0, w);
+      if (i == 5)
+        SetWindowTextW(label, (s.prediction > 0 ? L"Target lead " + number(s.prediction * 1000, 0) + L" ms"
+                                                : L"Target lead OFF")
+                                  .c_str());
       MoveWindow(label, 20, 25 + i * 43, 170, 25, TRUE);
       HWND slider = control(TRACKBAR_CLASSW, L"", SLIDER + i, TBS_AUTOTICKS, w);
       MoveWindow(slider, 200, 20 + i * 43, 310, 35, TRUE);
@@ -797,6 +801,10 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
       s.fov = v(3) / 100.;
       s.confidence = v(4) / 100.;
       s.prediction = v(5) / 1000.;
+      SetWindowTextW(
+          GetDlgItem(w, 705),
+          (s.prediction > 0 ? L"Target lead " + number(s.prediction * 1000, 0) + L" ms" : L"Target lead OFF")
+              .c_str());
       s.fps = v(6);
       s.hz = v(7);
       {
