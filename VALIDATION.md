@@ -47,3 +47,7 @@ The supplied local video was inspected at full-resolution frames 297–310 secon
 New regressions verify rejecting an isolated proposal, confirming consecutive current observations, no remembered-box output during loss, and clearing correction on target/perspective changes. Owned hidden-window UI tests exercise actual controls without installing hooks, starting input/capture or writing saved settings. Physical mouse/key delivery and live-game aim quality still require a PC gameplay test. Private recorded regressions continue locally, not as an independent accuracy benchmark.
 
 Self-exclusion continuation has three additional controlled tests: small gradual feature changes at an overlapping current box remain excluded; a different distant proposal remains eligible; and exclusion memory expires. These use explicit synthetic descriptors/boxes to test the guard, not invented neural results or proof of real-world self-recognition accuracy. Real saved-avatar/recorded-body regressions are separate.
+
+## 1.2.2 timestamped camera-input history
+
+New tests cover excluding pre-capture input from compensation, expiring/clearing history, static settling at several capture-to-result delays and moving-target error in an idealized linear-camera simulation. The simulation is explicit controlled test data, not fabricated detector output, game footage or evidence of matching the reference program. Native production dispatch, no-target click behavior, actual ONNX inference and hidden UI controls are checked separately by the existing suites.

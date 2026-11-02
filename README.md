@@ -1,4 +1,4 @@
-# Luxware for Windows 1.2.1 (x64)
+# Luxware for Windows 1.2.2 (x64)
 
 This is a compiled native Windows application, using the same genuinely trained player weights as the Mac app. It is a C++/Win32 port with actual DXGI Desktop Duplication/GDI screen capture, ONNX Runtime inference and standard Windows SendInput. It is not a renamed Mac bundle, an aim trainer, a video playback system or invented detection boxes. No Python installation, API key, cloud upload or account is needed to run the packaged executable. The updater uses the built-in Windows PowerShell 5.1 and contacts GitHub for releases.
 
@@ -80,3 +80,11 @@ The trained model and saved-self pixel descriptor format are unchanged. Self exc
 Native UI tests create a hidden owned window and exercise real controls/production handlers for mode tabs, activation modes, sliders, decimal fields, capture-state start/stop, preview expansion, scrolling and mouse-button binding storage. They install no hooks, run no input thread and do not write user settings or control a game.
 
 1.2.1 keeps the sensitivity slider scoped to First Person. Third Person shows a free-cursor explanation instead; the camera-only slider is hidden there. Native tab tests verify this visibility together with the actual engine mode.
+
+## 1.2.2 delayed-frame correction
+
+Camera aiming now keeps timestamped history of accepted relative mouse input across detection-frame changes. Before calculating a correction it subtracts movement sent after the current pixels were captured, using the configured sensitivity conversion. Previously, per-frame accounting restarted at each result, which could apply an already-sent correction again when inference delivered delayed pixels. History is bounded to half a second and cleared on focus/input pause, source/client-size changes or leaving camera mode. No-player frames still emit no movement; history never creates a target. Free-cursor mode is unchanged.
+
+This compensates capture-to-result delay under the calibrated linear mouse-to-screen approximation. It is not acknowledgement that the game processed an input packet, automatic game-sensitivity calibration or visibility behind cover. Physical game input acceptance, non-linear camera response and manual camera motion can still affect results. Detection weights and the creator-equivalence limitation remain unchanged.
+
+Tests include an explicitly idealized linear-camera scene with delayed observations, comparing the previous per-frame accounting with timestamped compensation. The JSON pixel-error values describe that controlled model only, not Roblox accuracy or FPS. Static targets must settle with 16.7, 50 and 100 ms observation delays; a moving-target case checks reduced error against the old accounting. Real recorded-image model and no-player dispatch regressions remain separate.

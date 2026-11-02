@@ -312,6 +312,9 @@ inline void inputLoop(
   bool osHeld = false, heldRight = false;
   Rates clicks, moves;
   AimMemory correction;
+  MotionHistory motion;
+  HWND motionSource = nullptr;
+  double motionWidth = 0, motionHeight = 0;
   double nextMove = 0, lastHz = 0, lastRates = 0;
   auto &frameTime = correction.frameTime, &appliedX = correction.appliedX, &appliedY = correction.appliedY,
        &filterX = correction.filterX, &filterY = correction.filterY, &lastMotion = correction.lastMotion;
@@ -367,6 +370,13 @@ inline void inputLoop(
     }
     POINT pointer = cursor();
     HWND source = shared.source.load();
+    if (source != motionSource || client.w != motionWidth || client.h != motionHeight || !s.camera) {
+      motion.clear();
+      motionSource = source;
+      motionWidth = client.w;
+      motionHeight = client.h;
+    }
+    t = now(); // Evaluate age after reading the shared frame, not before a possible scheduling delay.
     bool allowed = shared.armed && (!s.hold || shared.bindingHeld) && shared.scan && foreground(source) &&
                    t - shared.heartbeat.load() < .25 && t >= received && t - received < .5 && client.w > 0 &&
                    client.h > 0 && contains(client, pointer);
@@ -376,7 +386,7 @@ inline void inputLoop(
       clock.tick(t, false, s.cps, s.duty);
       nextMove = t;
       correction.clear();
-
+      motion.clear();
     } else {
       auto action = osHeld ? ClickClock::none : clock.tick(t, s.clicks, s.cps, s.duty);
       if (action == ClickClock::down && !osHeld) {
@@ -406,8 +416,9 @@ inline void inputLoop(
           double ex = client.x + target->box.cx() * client.w - (s.camera ? centerX : pointer.x),
                  ey = client.y + target->box.cy() * client.h - (s.camera ? centerY : pointer.y);
           if (s.camera) {
-            ex -= appliedX;
-            ey -= appliedY;
+            auto inFlight = motion.after(received, t);
+            ex -= inFlight.first;
+            ey -= inFlight.second;
           }
           double dt = lastMotion ? std::min(.1, t - lastMotion) : interval;
           lastMotion = t;
@@ -431,6 +442,7 @@ inline void inputLoop(
                 moves.add(t);
                 appliedX += x / s.sensitivity;
                 appliedY += y / s.sensitivity;
+                motion.record(now(), x / s.sensitivity, y / s.sensitivity);
               }
             } else {
               double x = std::clamp(pointer.x + dx, client.x + 1, client.x + client.w - 1),

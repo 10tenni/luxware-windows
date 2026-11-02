@@ -419,6 +419,38 @@ public:
   }
 };
 
+// Accepted relative input can be newer than the pixels currently being analyzed.
+// Keep that motion across frame changes instead of applying a delayed error twice.
+class MotionHistory {
+  struct Sample {
+    double time, x, y;
+  };
+  std::deque<Sample> samples;
+
+public:
+  void clear() {
+    samples.clear();
+  }
+  void record(double t, double x, double y) {
+    if (!std::isfinite(t + x + y))
+      return;
+    samples.push_back({t, x, y});
+    while (samples.size() > 256)
+      samples.pop_front();
+  }
+  std::pair<double, double> after(double captured, double current) {
+    while (!samples.empty() && current - samples.front().time > .5)
+      samples.pop_front();
+    std::pair<double, double> sum{};
+    for (auto &s : samples)
+      if (s.time > captured && s.time <= current) {
+        sum.first += s.x;
+        sum.second += s.y;
+      }
+    return sum;
+  }
+};
+
 struct AimMemory {
   double frameTime = 0, appliedX = 0, appliedY = 0, filterX = 0, filterY = 0, lastMotion = 0;
   int targetID = 0;

@@ -12,6 +12,7 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
         timeEndPeriod(1);
     }
   } resolution; // Match the production loop's requested scheduler resolution.
+  double delayedBaselineError = 0, delayedCompensatedError = 0;
   double clockInterval = 0, clockHold = 0, referenceMS = 0, optimizedMS = 0, maxPixelError = 0,
          pixelChecksum = 0;
   try {
@@ -243,6 +244,63 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
     check("staleObservationCannotMoveMouse", staleCannotMove);
     check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
+    MotionHistory history;
+    history.record(1.01, 20, -10);
+    history.record(1.04, 30, 5);
+    auto afterCapture = history.after(1.02, 1.05);
+    check("cameraHistoryCountsOnlyInputNewerThanPixels",
+          afterCapture.first == 30 && afterCapture.second == 5);
+    check("cameraHistoryExpiresOldInput", history.after(1.02, 1.7).first == 0);
+    history.record(2, 12, 4);
+    history.clear();
+    check("cameraHistoryClearRemovesPriorContext", history.after(1.9, 2.1).first == 0);
+    // Explicit idealized linear-camera simulation: capture-to-result delay, not a live-game benchmark.
+    auto delayedScene = [&](bool compensated, double latency, bool moving) {
+      struct Frame {
+        double captured, ready, error;
+      };
+      std::deque<Frame> queue;
+      MotionHistory inFlight;
+      double camera = 0, observedError = 0, captured = 0, oldApplied = 0, errorSum = 0;
+      int count = 0;
+      bool available = false;
+      for (int tick = 0; tick < 480; ++tick) {
+        double t = tick / 240.;
+        double target = 240 + (moving ? 80 * std::sin(6.28318530718 * t) : 0);
+        if (tick % 4 == 0)
+          queue.push_back({t, t + latency, target - camera});
+        while (!queue.empty() && queue.front().ready <= t) {
+          auto f = queue.front();
+          queue.pop_front();
+          observedError = f.error;
+          captured = f.captured;
+          oldApplied = 0;
+          available = true;
+        }
+        if (available && t - captured < .2) {
+          double correction = observedError - (compensated ? inFlight.after(captured, t).first : oldApplied);
+          if (std::abs(correction) > 3) {
+            double movement = std::round(std::clamp(correction, -180., 180.));
+            camera += movement;
+            oldApplied += movement;
+            inFlight.record(t + 1e-7, movement, 0);
+          }
+        }
+        if (t > .3) {
+          errorSum += std::abs(target - camera);
+          ++count;
+        }
+      }
+      return errorSum / std::max(1, count);
+    };
+    bool staticSettles = true;
+    for (double latency : {1. / 60, .05, .10})
+      staticSettles = delayedScene(true, latency, false) <= 3 && staticSettles;
+    check("compensatedStaticAimSettlesAcrossInferenceDelays", staticSettles);
+    delayedBaselineError = delayedScene(false, .05, true);
+    delayedCompensatedError = delayedScene(true, .05, true);
+    check("compensationReducesMovingTargetErrorInLinearDelayModel",
+          delayedCompensatedError < delayedBaselineError * .5);
     SelfGuard ownGuard;
     Feature ownSignature{};
     Detection ownProposal{{.4, .5, .15, .3}, .9f, 0, false, ownSignature};
@@ -407,7 +465,9 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
       out << ",";
     out << "\n\"" << checks[i].first << "\":" << (checks[i].second ? "true" : "false");
   }
-  out << "},\n\"preprocessReferenceMS\":" << referenceMS << ",\n\"preprocessOptimizedMS\":" << optimizedMS
+  out << "},\n\"linearDelayBaselineMeanPixelError\":" << delayedBaselineError
+      << ",\n\"linearDelayCompensatedMeanPixelError\":" << delayedCompensatedError
+      << ",\n\"preprocessReferenceMS\":" << referenceMS << ",\n\"preprocessOptimizedMS\":" << optimizedMS
       << ",\n\"preprocessMaximumPixelError\":" << maxPixelError
       << ",\n\"preprocessChecksum\":" << pixelChecksum << ",\n\"clockIntervalMS\":" << clockInterval * 1000
       << ",\n\"clockHoldMS\":" << clockHold * 1000
