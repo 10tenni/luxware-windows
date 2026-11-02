@@ -21,7 +21,7 @@ for name in ['release.json', 'README.md', 'START-HERE.txt', 'VALIDATION.md', 'Ru
              'MODEL-LICENSE.txt', 'ONNXRuntime-LICENSE.txt', 'ONNXRuntime-ThirdPartyNotices.txt',
              'DirectML-LICENSE.txt', 'DirectML-LICENSE-CODE.txt']:
     shutil.copy2(root / name, stage / name)
-for name in ['WindowsTestResults.json','UpdaterTestResults.json','NativeCoreTestResults.json','NativeUpdaterTestResults.json']:
+for name in ['WindowsTestResults.json','UpdaterTestResults.json','NativeCoreTestResults.json','NativeUpdaterTestResults.json','NativeUITestResults.json']:
     if (root / name).exists(): shutil.copy2(root / name, stage / name)
 (stage / 'SHA256SUMS.txt').write_text(''.join(
     hashlib.sha256(f.read_bytes()).hexdigest() + '  ' + f.relative_to(stage).as_posix() + '\n'

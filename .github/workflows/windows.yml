@@ -26,6 +26,12 @@ jobs:
           $p = Start-Process -FilePath ./build-windows/Release/Luxware.exe -ArgumentList '--core-test', 'NativeCoreTestResults.json' -Wait -PassThru
           if (Test-Path NativeCoreTestResults.json) { Get-Content NativeCoreTestResults.json }
           if ($p.ExitCode -ne 0) { throw "Core checks failed: $($p.ExitCode)" }
+      - name: Native compact UI controls (hidden owned window, no OS input)
+        shell: powershell
+        run: |
+          $p = Start-Process -FilePath ./build-windows/Release/Luxware.exe -ArgumentList '--ui-test', 'NativeUITestResults.json' -Wait -PassThru
+          if (Test-Path NativeUITestResults.json) { Get-Content NativeUITestResults.json }
+          if ($p.ExitCode -ne 0) { throw "UI checks failed: $($p.ExitCode)" }
       - name: Windows PowerShell 5.1 updater checks
         shell: powershell
         run: ./tests/Update.Tests.ps1 -Report NativeUpdaterTestResults.json

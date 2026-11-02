@@ -243,6 +243,25 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
     check("staleObservationCannotMoveMouse", staleCannotMove);
     check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
+    AimMemory aimMemory;
+    aimMemory.observe(3, false, 1);
+    aimMemory.filterX = 150;
+    aimMemory.filterY = -80;
+    aimMemory.appliedX = 30;
+    aimMemory.observe(4, false, 1.02);
+    check("targetSwitchClearsPriorCorrection",
+          aimMemory.filterX == 0 && aimMemory.filterY == 0 && aimMemory.appliedX == 0);
+    aimMemory.filterX = 80;
+    aimMemory.observe(4, true, 1.04);
+    check("perspectiveSwitchClearsPriorCorrection", aimMemory.filterX == 0);
+    Tracker stableTracker;
+    Detection proposal{{.45, .4, .1, .2}, .9f, 0, false, {}};
+    check("singleFrameProposalDoesNotAcquire",
+          !stableTracker.choose(stableTracker.update({proposal}, 1, true), 1, .71, true));
+    auto stablePlayer = stableTracker.choose(stableTracker.update({proposal}, 1.03, true), 1.03, .71, true);
+    check("consecutiveObservationsAcquirePlayer", stablePlayer.has_value());
+    check("missingObservationDoesNotReturnRememberedBox",
+          !stableTracker.choose(stableTracker.update({}, 1.06, true), 1.06, .71, true));
     LevelReturn level;
     level.calibrate(1);
     level.record(180);
@@ -295,10 +314,11 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
       auto reacquire = [&](std::vector<Detection> next) {
         Tracker tracker;
         auto first = tracker.update({d(.45, .5, g)}, 1, true);
-        auto chosen = tracker.choose(first, 1, .71, true);
+        auto chosen = tracker.choose(tracker.update({d(.45, .5, g)}, 1.02, true), 1.02, .71, true);
         auto id = chosen->d.id;
         tracker.choose(tracker.update({}, 1.2, true), 1.2, .71, true);
-        auto recovered = tracker.choose(tracker.update(next, 1.8, true), 1.8, .71, true);
+        tracker.choose(tracker.update(next, 1.8, true), 1.8, .71, true);
+        auto recovered = tracker.choose(tracker.update(next, 1.83, true), 1.83, .71, true);
         return recovered && recovered->d.id == id;
       };
       check("sameAppearanceRecoversSingleEntityID", reacquire({d(.45, .25, a)}));

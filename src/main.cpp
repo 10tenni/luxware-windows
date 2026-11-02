@@ -32,6 +32,13 @@ enum {
   CHECKUPDATE,
   AUTOUPDATE,
   GAMEFRIENDLY,
+  FIRSTTAB,
+  THIRDTAB,
+  HOLDMODE,
+  TOGGLEMODE,
+  PREVIEW,
+  MAINSENS,
+  MAINHZ,
   SLIDER = 300
 };
 constexpr UINT APP_BIND = WM_APP + 1, APP_SAVE = WM_APP + 2;
@@ -44,6 +51,8 @@ struct UI {
   HBRUSH background = nullptr, editBrush = nullptr;
   PaintBuffer canvas;
   double nextVisual = 0;
+  int scroll = 0;
+  bool previewVisible = false;
   std::vector<HWND> controls, sliders;
   std::vector<HWND> windows;
   RECT preview{};
@@ -76,6 +85,8 @@ void status(const std::string &text) {
     InvalidateRect(ui.window, nullptr, FALSE);
 }
 void save() {
+  if (ui.testing)
+    return;
   saveSettings(state.config());
 }
 void resetSelection() {
@@ -333,30 +344,61 @@ void move(int id, int x, int y, int w, int h = 30) {
 void layout() {
   RECT r{};
   GetClientRect(ui.window, &r);
-  int w = int((r.right - r.left) / ui.scale), h = int((r.bottom - r.top) / ui.scale);
-  move(STOP, w - 132, 20, 110);
-  move(SOURCE, 88, 66, std::max(300, w - 425), 240);
-  move(REFRESH, w - 325, 66, 88);
-  move(SCAN, w - 225, 66, 118);
-  move(VIEW, 64, 108, 160, 120);
-  move(MODE, 282, 108, 94, 120);
-  move(BIND, 388, 108, 190);
-  move(AIM, 590, 108, 120);
-  move(ARM, w - 180, 108, 158);
-  move(SINGLE, 22, 150, 112);
-  move(RESET, 144, 150, 143);
-  move(LEVEL, 297, 150, 117);
-  move(SETLEVEL, 424, 150, 170);
-  move(SELF, w - 380, 150, 150);
-  move(IMPORT, w - 220, 150, 100);
-  move(SETTINGS, w - 110, 150, 88);
-  move(UPDATES, w - 438, 20, 130);
-  move(CLICKS, 28, h - 115, 125);
-  move(BUTTON, 204, h - 115, 85, 120);
-  move(CPS, 333, h - 115, 85);
-  move(DUTY, 490, h - 115, 78);
-  ui.preview = {dip(22), dip(210), dip(w - 22), dip(h - 158)};
+  int w = int(r.right / ui.scale), h = int(r.bottom / ui.scale);
+  SCROLLINFO si{sizeof(si), SIF_RANGE | SIF_PAGE | SIF_POS};
+  si.nMin = 0;
+  si.nMax = 1000;
+  si.nPage = UINT(std::max(1, h - 180));
+  si.nPos = ui.scroll;
+  SetScrollInfo(ui.window, SB_VERT, &si, TRUE);
+  GetScrollInfo(ui.window, SB_VERT, &si);
+  ui.scroll = si.nPos;
+  auto place = [&](int id, int x, int y, int width, int height = 30, bool fixed = false) {
+    HWND child = GetDlgItem(ui.window, id);
+    if (!child)
+      return;
+    int py = y - (fixed ? 0 : ui.scroll);
+    bool visible = fixed || (py >= 145 && py + std::min(height, 32) <= h - 100);
+    MoveWindow(child, dip(x), dip(py), dip(width), dip(height), TRUE);
+    ShowWindow(child, visible ? SW_SHOW : SW_HIDE);
+  };
+  ShowWindow(ui.view, SW_HIDE);
+  ShowWindow(ui.mode, SW_HIDE);
+  place(FIRSTTAB, 20, 55, 174, 34, true);
+  place(THIRDTAB, 202, 55, 174, 34, true);
+  place(SCAN, 120, 104, 116, 30, true);
+  place(ARM, 246, 104, 130, 30, true);
+  place(BIND, 276, 207, 84);
+  place(HOLDMODE, 30, 307, 160);
+  place(TOGGLEMODE, 200, 307, 160);
+  place(MAINSENS, 30, 422, 330, 28);
+  place(MAINHZ, 30, 550, 330, 28);
+  place(CLICKS, 30, 637, 174);
+  place(BUTTON, 252, 637, 108, 130);
+  place(CPS, 70, 684, 92);
+  place(DUTY, 265, 684, 80);
+  place(SINGLE, 30, 780, 170);
+  place(RESET, 206, 780, 155);
+  place(SELF, 30, 820, 160);
+  place(SOURCE, 30, 911, 230, 180);
+  place(REFRESH, 270, 911, 90);
+  place(AIM, 30, 960, 140);
+  place(IMPORT, 202, 960, 158);
+  place(PREVIEW, 20, h - 88, 110, 30, true);
+  place(SETTINGS, 140, h - 88, 110, 30, true);
+  place(STOP, 260, h - 88, 116, 30, true);
+  place(UPDATES, 286, 14, 90, 28, true);
+  ui.preview = {dip(416), dip(104), dip(w - 24), dip(h - 100)};
   InvalidateRect(ui.window, nullptr, TRUE);
+}
+void togglePreview() {
+  ui.previewVisible = !ui.previewVisible;
+  RECT r{};
+  GetWindowRect(ui.window, &r);
+  SetWindowPos(ui.window, nullptr, 0, 0, dip(ui.previewVisible ? 1220 : 436), r.bottom - r.top,
+               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  SetWindowTextW(GetDlgItem(ui.window, PREVIEW), ui.previewVisible ? L"Hide preview" : L"Preview");
+  layout();
 }
 void refreshWindows() {
   HWND previous = state.source;
@@ -479,116 +521,125 @@ void paint(HWND window, HDC dc) {
     moves = state.moves;
     own = !state.own.empty();
   }
-  text(dc, 22, 20, L"L U X W A R E", RGB(48, 154, 255), ui.big);
-  text(dc, 270, 27, L"WINDOWS " + std::wstring(appVersion), RGB(130, 145, 165));
-  text(dc, w - 292, 27, state.armed ? L"INPUT ARMED" : L"INPUT OFF",
-       state.armed ? RGB(66, 220, 155) : RGB(140, 150, 165));
-  text(dc, 22, 73, L"Window");
-  text(dc, 22, 115, L"View");
-  text(dc, 236, 115, L"Mode");
-  text(dc, 22, 190, wide(error.empty() ? "Detector: " + provider + " | " + method : error),
-       error.empty() ? RGB(125, 190, 220) : RGB(255, 165, 90));
-  HBRUSH black = CreateSolidBrush(RGB(3, 5, 8));
-  FillRect(dc, &ui.preview, black);
-  DeleteObject(black);
-  auto image = ui.marking ? ui.frozen : v.image;
-  if (image && image->valid()) {
-    RECT imageBounds = imageRect(*image);
-    drawImage(dc, *image, imageBounds);
-    if (!ui.marking) {
-      for (auto &d : v.detections)
-        if (!s.single || (v.target && d.id == v.target->id)) {
-          COLORREF color = d.visual ? RGB(255, 170, 50) : RGB(255, 65, 85);
-          box(dc, d.box, imageBounds, color);
-          std::wstring label = std::wstring(d.visual ? L"CV #" : L"ML #") + std::to_wstring(d.id) + L" " +
-                               number(d.score * 100, 0) + L"%";
-          SetBkMode(dc, OPAQUE);
-          SetBkColor(dc, RGB(10, 12, 16));
-          SetTextColor(dc, color);
-          TextOutW(dc, imageBounds.left + int(d.box.x * (imageBounds.right - imageBounds.left)),
-                   imageBounds.top + int(d.box.y * (imageBounds.bottom - imageBounds.top)) - dip(16),
-                   label.c_str(), int(label.size()));
-          SetBkMode(dc, TRANSPARENT);
+
+  COLORREF red = RGB(227, 62, 88), muted = RGB(130, 130, 138);
+  text(dc, 22, 14, L"L U X W A R E", red, ui.big);
+  int saved = SaveDC(dc);
+  IntersectClipRect(dc, 0, dip(145), dip(396), dip(h - 100));
+  auto card = [&](int y, int height, const wchar_t *title) {
+    RECT r{dip(20), dip(y - ui.scroll), dip(376), dip(y + height - ui.scroll)};
+    HBRUSH fill = CreateSolidBrush(RGB(18, 18, 21));
+    FillRect(dc, &r, fill);
+    DeleteObject(fill);
+    HBRUSH line = CreateSolidBrush(RGB(39, 39, 44));
+    FrameRect(dc, &r, line);
+    DeleteObject(line);
+    text(dc, 32, y + 12 - ui.scroll, title, RGB(225, 225, 231));
+  };
+  card(160, 90, L"Hotkey");
+  RECT key{dip(32), dip(207 - ui.scroll), dip(264), dip(237 - ui.scroll)};
+  HBRUSH dark = CreateSolidBrush(RGB(8, 8, 10));
+  FillRect(dc, &key, dark);
+  DeleteObject(dark);
+  text(dc, 42, 212 - ui.scroll, bindingName(s), RGB(235, 235, 240), ui.mono);
+  card(264, 86, L"Mode");
+  card(364, 118, L"Sensitivity");
+  text(dc, 310, 376 - ui.scroll, number(s.sensitivity, 2), red, ui.mono);
+  text(dc, 32, 456 - ui.scroll,
+       s.camera ? L"Adjust to match your in-game sensitivity." : L"Third person moves the free cursor.",
+       muted, ui.mono);
+  card(496, 118, L"Tracking frequency");
+  text(dc, 286, 508 - ui.scroll, number(s.hz, 0) + L" Hz", red, ui.mono);
+  text(dc, 32, 584 - ui.scroll, L"Movement limit; detection FPS is shown below.", muted, ui.mono);
+  card(628, 124, L"");
+  text(dc, 30, 690 - ui.scroll, L"CPS");
+  text(dc, 194, 690 - ui.scroll, L"Duty %");
+  card(766, 96, L"");
+  card(876, 140, L"Capture & detector");
+  text(dc, 32, 996 - ui.scroll, wide(provider), muted, ui.mono);
+  RestoreDC(dc, saved);
+  text(dc, 23, 111,
+       state.armed ? (v.target   ? L"TRACKING"
+                      : s.clicks ? L"CLICKING"
+                                 : L"ARMED")
+                   : L"IDLE",
+       state.armed ? red : muted, ui.mono);
+  if (ui.previewVisible && ui.preview.right > ui.preview.left) {
+    HBRUSH black = CreateSolidBrush(RGB(3, 3, 5));
+    FillRect(dc, &ui.preview, black);
+    DeleteObject(black);
+    auto image = ui.marking ? ui.frozen : v.image;
+    if (image && image->valid()) {
+      RECT imageBounds = imageRect(*image);
+      drawImage(dc, *image, imageBounds);
+      if (!ui.marking) {
+        for (auto &d : v.detections)
+          if (!s.single || (v.target && d.id == v.target->id)) {
+            COLORREF color = d.visual ? RGB(255, 170, 50) : RGB(255, 65, 85);
+            box(dc, d.box, imageBounds, color);
+            std::wstring label = std::wstring(d.visual ? L"CV #" : L"ML #") + std::to_wstring(d.id) + L" " +
+                                 number(d.score * 100, 0) + L"%";
+            SetBkMode(dc, OPAQUE);
+            SetBkColor(dc, RGB(10, 12, 16));
+            SetTextColor(dc, color);
+            TextOutW(dc, imageBounds.left + int(d.box.x * (imageBounds.right - imageBounds.left)),
+                     imageBounds.top + int(d.box.y * (imageBounds.bottom - imageBounds.top)) - dip(16),
+                     label.c_str(), int(label.size()));
+            SetBkMode(dc, TRANSPARENT);
+          }
+        if (v.target) {
+          box(dc, v.target->box, imageBounds, RGB(255, 220, 70), 3);
+          HPEN p = CreatePen(PS_SOLID, 1, RGB(0, 210, 255));
+          auto old = SelectObject(dc, p);
+          POINT cursor{};
+          GetCursorPos(&cursor);
+          double ax = s.camera ? .5 : (cursor.x - v.client.x) / std::max(1., v.client.w),
+                 ay = s.camera ? .5 : (cursor.y - v.client.y) / std::max(1., v.client.h);
+          MoveToEx(dc, imageBounds.left + int(ax * (imageBounds.right - imageBounds.left)),
+                   imageBounds.top + int(ay * (imageBounds.bottom - imageBounds.top)), nullptr);
+          LineTo(dc, imageBounds.left + int(v.target->box.cx() * (imageBounds.right - imageBounds.left)),
+                 imageBounds.top + int(v.target->box.cy() * (imageBounds.bottom - imageBounds.top)));
+          SelectObject(dc, old);
+          DeleteObject(p);
         }
-      if (v.target) {
-        box(dc, v.target->box, imageBounds, RGB(255, 220, 70), 3);
-        HPEN p = CreatePen(PS_SOLID, 1, RGB(0, 210, 255));
-        auto old = SelectObject(dc, p);
-        POINT cursor{};
-        GetCursorPos(&cursor);
-        double ax = s.camera ? .5 : (cursor.x - v.client.x) / std::max(1., v.client.w),
-               ay = s.camera ? .5 : (cursor.y - v.client.y) / std::max(1., v.client.h);
-        MoveToEx(dc, imageBounds.left + int(ax * (imageBounds.right - imageBounds.left)),
-                 imageBounds.top + int(ay * (imageBounds.bottom - imageBounds.top)), nullptr);
-        LineTo(dc, imageBounds.left + int(v.target->box.cx() * (imageBounds.right - imageBounds.left)),
-               imageBounds.top + int(v.target->box.cy() * (imageBounds.bottom - imageBounds.top)));
-        SelectObject(dc, old);
+      }
+      if (ui.dragging) {
+        RECT d{std::min(ui.dragStart.x, ui.dragEnd.x), std::min(ui.dragStart.y, ui.dragEnd.y),
+               std::max(ui.dragStart.x, ui.dragEnd.x), std::max(ui.dragStart.y, ui.dragEnd.y)};
+        HPEN p = CreatePen(PS_SOLID, 2, RGB(0, 220, 255));
+        auto a = SelectObject(dc, p), b = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+        Rectangle(dc, d.left, d.top, d.right, d.bottom);
+        SelectObject(dc, a);
+        SelectObject(dc, b);
         DeleteObject(p);
       }
-    }
-    if (ui.dragging) {
-      RECT d{std::min(ui.dragStart.x, ui.dragEnd.x), std::min(ui.dragStart.y, ui.dragEnd.y),
-             std::max(ui.dragStart.x, ui.dragEnd.x), std::max(ui.dragStart.y, ui.dragEnd.y)};
-      HPEN p = CreatePen(PS_SOLID, 2, RGB(0, 220, 255));
-      auto a = SelectObject(dc, p), b = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-      Rectangle(dc, d.left, d.top, d.right, d.bottom);
-      SelectObject(dc, a);
-      SelectObject(dc, b);
-      DeleteObject(p);
-    }
-  } else
-    text(dc, 45, 270, L"Start scanning, then focus the selected game for live screen capture",
-         RGB(140, 155, 175));
-  std::string message =
-      ui.marking                ? "PREVIEW FROZEN: drag tightly around your own visible body. Escape cancels."
-      : now() < ui.messageUntil ? ui.message
-      : state.scan
-          ? (front(state.source) ? v.note : "Capture paused: focus the selected game window (Alt+Tab)")
-          : ui.message;
-  text(dc, 22, h - 149, wide(message), RGB(60, 208, 240));
-  text(dc, 160, h - 108, L"Button");
-  text(dc, 300, h - 108, L"CPS");
-  text(dc, 430, h - 108, L"Duty %");
-  std::wstring input = L"Input off";
-  POINT cursor{};
-  GetCursorPos(&cursor);
-  if (state.armed) {
-    if (s.hold && !state.bindingHeld)
-      input = L"Armed: hold your binding in the selected game";
-    else if (!front(state.source))
-      input = L"Paused: focus selected game";
-    else if (now() - v.received > .5)
-      input = L"Paused: no fresh captured frame";
-    else if (!contains(v.client, cursor))
-      input = L"Paused: pointer outside game client";
-    else if (!s.aim || s.strength <= 0)
-      input = L"Active: clicker only";
-    else if (!own)
-      input = s.clicks ? L"Auto clicker active | mark your avatar to enable aiming"
-                       : L"Aim requires your saved avatar reference";
-    else if (!v.target)
-      input = s.clicks ? L"Auto clicker active | no player detected | mouse free"
-                       : L"No player detected | mouse free";
-    else
-      input = L"Active: following detected target";
+    } else
+      text(dc, 45, 270, L"Start scanning, then focus the selected game for live screen capture",
+           RGB(140, 155, 175));
+
+    text(dc, 416, 72, L"DETECTION PREVIEW", red, ui.mono);
+    text(dc, 416, h - 80, wide(error.empty() ? method : error), muted, ui.mono);
   }
-  text(dc, 22, h - 70, input, RGB(55, 155, 255));
-  auto measured = std::wstring(s.aim ? L"Vision " : L"Capture ") +
-                  number(now() - v.received > .5 ? 0 : v.fps, 0) + L" FPS  |  " + number(v.ms, 1) +
-                  L" ms  |  " + number(cps) + L" CPS  |  " + number(moves, 0) + L" moves/s  |  CPU " +
-                  number(cpuUsage(), 1) + L"%";
-  text(dc, std::max(400, w - 690), h - 70, measured, RGB(190, 200, 215), ui.mono);
-  text(dc, 22, h - 39,
-       L"Ctrl+Alt+Esc stops all. Ctrl+Shift+R resets target. First person: relative camera input. Third "
-       L"person: free cursor.",
-       RGB(130, 145, 160));
-  if (!inputError.empty())
-    text(dc, 22, h - 20, wide(inputError), RGB(255, 130, 100));
+  std::wstring stats = number(now() - v.received > .5 ? 0 : v.fps, 0) + L" FPS  |  " + number(v.ms, 1) +
+                       L" ms  |  " + number(cps, 2) + L" CPS | " + number(moves, 0) + L" moves/s";
+  text(dc, 22, h - 49, stats, RGB(190, 190, 202), ui.mono);
+  std::string note =
+      !inputError.empty()       ? inputError
+      : !error.empty()          ? error
+      : now() < ui.messageUntil ? ui.message
+      : state.armed
+          ? (v.target ? "Tracking confirmed player"
+                      : (s.clicks ? "No player: mouse free; auto clicker active" : "No player: mouse free"))
+          : "Ctrl+Alt+Esc: stop all | Scroll for capture setup";
+  RECT message{dip(22), dip(h - 28), dip(w - 20), dip(h - 5)};
+  SelectObject(dc, ui.mono);
+  SetTextColor(dc, muted);
+  DrawTextW(dc, wide(note).c_str(), -1, &message, DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 void drawButton(DRAWITEMSTRUCT *d) {
   if (d->CtlType == ODT_COMBOBOX) {
     RECT r = d->rcItem;
-    HBRUSH fill = CreateSolidBrush(d->itemState & ODS_SELECTED ? RGB(23, 65, 110) : RGB(28, 34, 44));
+    HBRUSH fill = CreateSolidBrush(d->itemState & ODS_SELECTED ? RGB(69, 24, 36) : RGB(19, 19, 24));
     FillRect(d->hDC, &r, fill);
     DeleteObject(fill);
     SetBkMode(d->hDC, TRANSPARENT);
@@ -608,6 +659,33 @@ void drawButton(DRAWITEMSTRUCT *d) {
     return;
   }
   auto s = state.config();
+  if (d->CtlID == FIRSTTAB || d->CtlID == THIRDTAB || d->CtlID == HOLDMODE || d->CtlID == TOGGLEMODE) {
+    bool selected = (d->CtlID == FIRSTTAB && s.camera) || (d->CtlID == THIRDTAB && !s.camera) ||
+                    (d->CtlID == HOLDMODE && s.hold) || (d->CtlID == TOGGLEMODE && !s.hold);
+    RECT r = d->rcItem;
+    bool tab = d->CtlID == FIRSTTAB || d->CtlID == THIRDTAB;
+    HBRUSH fill = CreateSolidBrush(selected && !tab ? RGB(49, 18, 25) : RGB(11, 11, 14));
+    FillRect(d->hDC, &r, fill);
+    DeleteObject(fill);
+    if (selected) {
+      RECT line = r;
+      if (tab)
+        line.top = line.bottom - 2;
+      HBRUSH b = CreateSolidBrush(RGB(206, 49, 74));
+      if (tab)
+        FillRect(d->hDC, &line, b);
+      else
+        FrameRect(d->hDC, &r, b);
+      DeleteObject(b);
+    }
+    wchar_t label[80]{};
+    GetWindowTextW(d->hwndItem, label, 80);
+    SetBkMode(d->hDC, TRANSPARENT);
+    SetTextColor(d->hDC, selected ? RGB(233, 66, 92) : RGB(133, 133, 144));
+    SelectObject(d->hDC, ui.font);
+    DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    return;
+  }
   bool checkbox = d->CtlID == AIM || d->CtlID == SINGLE || d->CtlID == LEVEL || d->CtlID == CLICKS ||
                   d->CtlID == GPU || d->CtlID == AUTOUPDATE || d->CtlID == GAMEFRIENDLY;
   bool checked = (d->CtlID == AIM && s.aim) || (d->CtlID == SINGLE && s.single) ||
@@ -616,10 +694,10 @@ void drawButton(DRAWITEMSTRUCT *d) {
                  (d->CtlID == GAMEFRIENDLY && s.gameFriendly);
   RECT r = d->rcItem;
   bool primary = d->CtlID == SCAN || d->CtlID == ARM;
-  COLORREF color = primary ? RGB(0, 115, 245) : RGB(32, 38, 49);
+  COLORREF color = primary ? RGB(187, 39, 64) : RGB(32, 38, 49);
   if (d->itemState & ODS_SELECTED)
     color = RGB(45, 70, 100);
-  HBRUSH b = CreateSolidBrush(checkbox ? RGB(9, 13, 19) : color);
+  HBRUSH b = CreateSolidBrush(checkbox ? RGB(11, 11, 14) : color);
   FillRect(d->hDC, &r, b);
   DeleteObject(b);
   SetBkMode(d->hDC, TRANSPARENT);
@@ -627,7 +705,7 @@ void drawButton(DRAWITEMSTRUCT *d) {
   SelectObject(d->hDC, ui.font);
   if (checkbox) {
     RECT c{r.left + 3, r.top + dip(7), r.left + dip(19), r.top + dip(23)};
-    HBRUSH fill = CreateSolidBrush(checked ? RGB(0, 125, 255) : RGB(50, 60, 75));
+    HBRUSH fill = CreateSolidBrush(checked ? RGB(216, 49, 77) : RGB(50, 60, 75));
     FillRect(d->hDC, &c, fill);
     DeleteObject(fill);
     if (checked) {
@@ -766,7 +844,7 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
   }
   if (m == WM_CTLCOLORSTATIC || m == WM_CTLCOLORDLG) {
     SetTextColor(reinterpret_cast<HDC>(wp), RGB(220, 230, 240));
-    SetBkColor(reinterpret_cast<HDC>(wp), RGB(9, 13, 19));
+    SetBkColor(reinterpret_cast<HDC>(wp), RGB(11, 11, 14));
     return reinterpret_cast<LRESULT>(ui.background);
   }
   if (m == WM_ERASEBKGND) {
@@ -833,6 +911,30 @@ void importModel() {
   }
   save();
 }
+void drawReferenceSlider(HDC dc, RECT r, HWND slider) {
+  HBRUSH bg = CreateSolidBrush(RGB(18, 18, 21));
+  FillRect(dc, &r, bg);
+  DeleteObject(bg);
+  int low = int(SendMessageW(slider, TBM_GETRANGEMIN, 0, 0)),
+      high = int(SendMessageW(slider, TBM_GETRANGEMAX, 0, 0)),
+      value = int(SendMessageW(slider, TBM_GETPOS, 0, 0));
+  int left = r.left + dip(7), right = r.right - dip(7), y = (r.top + r.bottom) / 2;
+  int x = left + int(double(value - low) / std::max(1, high - low) * (right - left));
+  HPEN line = CreatePen(PS_SOLID, 2, RGB(50, 50, 57));
+  auto old = SelectObject(dc, line);
+  MoveToEx(dc, left, y, nullptr);
+  LineTo(dc, right, y);
+  SelectObject(dc, old);
+  DeleteObject(line);
+  POINT diamond[4] = {{x, y - dip(5)}, {x + dip(5), y}, {x, y + dip(5)}, {x - dip(5), y}};
+  HBRUSH red = CreateSolidBrush(RGB(225, 61, 88));
+  auto brush = SelectObject(dc, red);
+  auto pen = SelectObject(dc, GetStockObject(NULL_PEN));
+  Polygon(dc, diamond, 4);
+  SelectObject(dc, pen);
+  SelectObject(dc, brush);
+  DeleteObject(red);
+}
 void renderOwnWindow(const std::filesystem::path &path) {
   RECT bounds{};
   GetClientRect(ui.window, &bounds);
@@ -849,6 +951,8 @@ void renderOwnWindow(const std::filesystem::path &path) {
   auto old = SelectObject(dc, bitmap);
   paint(ui.window, dc);
   for (HWND child : ui.controls) {
+    if (!(GetWindowLongPtrW(child, GWL_STYLE) & WS_VISIBLE))
+      continue;
     RECT r{};
     GetWindowRect(child, &r);
     MapWindowPoints(nullptr, ui.window, reinterpret_cast<POINT *>(&r), 2);
@@ -864,6 +968,9 @@ void renderOwnWindow(const std::filesystem::path &path) {
       item.hDC = dc;
       item.rcItem = {0, 0, r.right - r.left, r.bottom - r.top};
       drawButton(&item);
+    } else if (GetDlgCtrlID(child) == MAINSENS || GetDlgCtrlID(child) == MAINHZ) {
+      RECT slider{0, 0, r.right - r.left, r.bottom - r.top};
+      drawReferenceSlider(dc, slider, child);
     } else if (std::wstring(cls) == L"ComboBox") {
       DRAWITEMSTRUCT item{};
       item.CtlType = ODT_COMBOBOX;
@@ -888,6 +995,32 @@ void renderOwnWindow(const std::filesystem::path &path) {
   DeleteDC(dc);
 }
 void command(int id, int notification) {
+  if (id == PREVIEW) {
+    togglePreview();
+    return;
+  }
+  if (id == FIRSTTAB || id == THIRDTAB || id == HOLDMODE || id == TOGGLEMODE) {
+    auto s = state.config();
+    if (id == FIRSTTAB || id == THIRDTAB) {
+      s.camera = id == FIRSTTAB;
+      state.armed = false;
+      resetSelection();
+      SendMessageW(ui.view, CB_SETCURSEL, s.camera ? 0 : 1, 0);
+    } else {
+      s.hold = id == HOLDMODE;
+      state.armed = false;
+      state.bindingHeld = false;
+      SendMessageW(ui.mode, CB_SETCURSEL, s.hold ? 1 : 0, 0);
+    }
+    {
+      std::lock_guard<std::mutex> lock(state.mutex);
+      state.settings = s;
+    }
+    save();
+    RedrawWindow(ui.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+    return;
+  }
+
   auto s = state.config();
   if (id == STOP) {
     stop();
@@ -928,6 +1061,8 @@ void command(int id, int notification) {
     return;
   }
   if (id == SELF) {
+    if (!ui.previewVisible)
+      togglePreview();
     markOwn();
     return;
   }
@@ -989,8 +1124,8 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
                          CLEARTYPE_QUALITY, 0, L"Segoe UI");
     ui.mono = CreateFontW(-dip(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0,
                           CLEARTYPE_QUALITY, 0, L"Consolas");
-    ui.background = CreateSolidBrush(RGB(9, 13, 19));
-    ui.editBrush = CreateSolidBrush(RGB(28, 34, 44));
+    ui.background = CreateSolidBrush(RGB(11, 11, 14));
+    ui.editBrush = CreateSolidBrush(RGB(19, 19, 24));
     DWORD combo = CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;
     ui.source = control(L"COMBOBOX", L"", SOURCE, combo | WS_VSCROLL);
     ui.view = control(L"COMBOBOX", L"", VIEW, combo);
@@ -1019,8 +1154,19 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
                       {IMPORT, L"Model..."},
                       {SETTINGS, L"Settings"},
                       {UPDATES, L"Updates"},
-                      {CLICKS, L"Auto clicker"}})
+                      {CLICKS, L"Auto clicker"},
+                      {FIRSTTAB, L"FIRST PERSON"},
+                      {THIRDTAB, L"THIRD PERSON"},
+                      {HOLDMODE, L"Hold"},
+                      {TOGGLEMODE, L"Toggle"},
+                      {PREVIEW, L"Preview"}})
       button(pair.second, pair.first);
+    HWND sens = control(TRACKBAR_CLASSW, L"", MAINSENS, TBS_NOTICKS);
+    HWND hz = control(TRACKBAR_CLASSW, L"", MAINHZ, TBS_NOTICKS);
+    SendMessageW(sens, TBM_SETRANGE, TRUE, MAKELPARAM(10, 300));
+    SendMessageW(sens, TBM_SETPOS, TRUE, int(s.sensitivity * 100));
+    SendMessageW(hz, TBM_SETRANGE, TRUE, MAKELPARAM(5, 240));
+    SendMessageW(hz, TBM_SETPOS, TRUE, int(s.hz));
     ui.cps = control(L"EDIT", number(s.cps).c_str(), CPS, ES_AUTOHSCROLL | WS_BORDER);
     ui.duty = control(L"EDIT", number(s.duty * 100).c_str(), DUTY, ES_AUTOHSCROLL | WS_BORDER);
     if (!ui.testing) {
@@ -1044,7 +1190,7 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     return 0;
   case WM_GETMINMAXINFO: {
     auto p = reinterpret_cast<MINMAXINFO *>(lp);
-    p->ptMinTrackSize = {dip(1080), dip(760)};
+    p->ptMinTrackSize = {dip(420), dip(640)};
     return 0;
   }
   case WM_DPICHANGED: {
@@ -1053,6 +1199,51 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     SetWindowPos(w, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
                  SWP_NOZORDER | SWP_NOACTIVATE);
     layout();
+    return 0;
+  }
+  case WM_VSCROLL: {
+    SCROLLINFO si{sizeof(si), SIF_ALL};
+    GetScrollInfo(w, SB_VERT, &si);
+    switch (LOWORD(wp)) {
+    case SB_LINEUP:
+      ui.scroll -= 32;
+      break;
+    case SB_LINEDOWN:
+      ui.scroll += 32;
+      break;
+    case SB_PAGEUP:
+      ui.scroll -= int(si.nPage);
+      break;
+    case SB_PAGEDOWN:
+      ui.scroll += int(si.nPage);
+      break;
+    case SB_THUMBTRACK:
+      ui.scroll = si.nTrackPos;
+      break;
+    }
+    layout();
+    return 0;
+  }
+  case WM_MOUSEWHEEL:
+    ui.scroll -= GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA * 64;
+    layout();
+    return 0;
+  case WM_HSCROLL: {
+    int id = GetDlgCtrlID(reinterpret_cast<HWND>(lp));
+    if (id == MAINSENS || id == MAINHZ) {
+      auto s = state.config();
+      int value = int(SendMessageW(reinterpret_cast<HWND>(lp), TBM_GETPOS, 0, 0));
+      if (id == MAINSENS)
+        s.sensitivity = value / 100.;
+      else
+        s.hz = value;
+      {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.settings = s;
+      }
+      save();
+      InvalidateRect(w, nullptr, FALSE);
+    }
     return 0;
   }
   case WM_COMMAND:
@@ -1094,6 +1285,11 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
       status("Binding recording timed out");
     }
     auto s = state.config();
+    for (auto entry : {std::pair<int, int>{MAINSENS, int(s.sensitivity * 100)}, {MAINHZ, int(s.hz)}}) {
+      HWND slider = GetDlgItem(w, entry.first);
+      if (int(SendMessageW(slider, TBM_GETPOS, 0, 0)) != entry.second)
+        SendMessageW(slider, TBM_SETPOS, TRUE, entry.second);
+    }
     bool hasOwn;
     {
       std::lock_guard<std::mutex> l(state.mutex);
@@ -1102,8 +1298,7 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     SetWindowTextW(GetDlgItem(w, SELF), ui.marking ? L"Cancel avatar box"
                                         : hasOwn   ? L"Update my avatar"
                                                    : L"Mark myself");
-    SetWindowTextW(GetDlgItem(w, BIND),
-                   (ui.recording ? L"Cancel binding" : (L"Bind: " + bindingName(s))).c_str());
+    SetWindowTextW(GetDlgItem(w, BIND), (ui.recording ? L"Cancel" : L"Change"));
     SetWindowTextW(GetDlgItem(w, SCAN), state.scan ? L"Stop scan" : L"Start scan");
     SetWindowTextW(GetDlgItem(w, ARM), state.armed ? L"Stop input" : L"Activate input");
     EnableWindow(ui.source, !state.scan);
@@ -1182,6 +1377,19 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     }
     return 0;
   }
+  case WM_NOTIFY: {
+    auto nm = reinterpret_cast<NMHDR *>(lp);
+    if ((nm->idFrom == MAINSENS || nm->idFrom == MAINHZ) && nm->code == NM_CUSTOMDRAW) {
+      auto cd = reinterpret_cast<NMCUSTOMDRAW *>(lp);
+      if (cd->dwDrawStage == CDDS_PREPAINT) {
+        RECT r{};
+        GetClientRect(nm->hwndFrom, &r);
+        drawReferenceSlider(cd->hdc, r, nm->hwndFrom);
+        return CDRF_SKIPDEFAULT;
+      }
+    }
+    break;
+  }
   case WM_DRAWITEM:
     drawButton(reinterpret_cast<DRAWITEMSTRUCT *>(lp));
     return TRUE;
@@ -1197,7 +1405,7 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
   case WM_CTLCOLORLISTBOX:
   case WM_CTLCOLORSTATIC:
     SetTextColor(reinterpret_cast<HDC>(wp), RGB(230, 235, 245));
-    SetBkColor(reinterpret_cast<HDC>(wp), RGB(28, 34, 44));
+    SetBkColor(reinterpret_cast<HDC>(wp), RGB(19, 19, 24));
     return reinterpret_cast<LRESULT>(ui.editBrush);
   case WM_ERASEBKGND:
     return 1;
@@ -1235,6 +1443,61 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
 int runSelfTests(const std::filesystem::path &report,
                  bool recorded); // Implemented in tests.hpp; no OS input is generated.
 #include "tests.hpp"
+int runUITests(HWND window, const std::filesystem::path &report) {
+  std::vector<std::pair<std::string, bool>> checks;
+  auto check = [&](const std::string &name, bool ok) { checks.push_back({name, ok}); };
+  check("startsInCompactView", !ui.previewVisible);
+  command(THIRDTAB, 0);
+  check("thirdPersonTabChangesEngineMode", !state.config().camera);
+  command(FIRSTTAB, 0);
+  check("firstPersonTabChangesEngineMode", state.config().camera);
+  command(HOLDMODE, 0);
+  check("holdButtonChangesActivationMode", state.config().hold);
+  command(TOGGLEMODE, 0);
+  check("toggleButtonChangesActivationMode", !state.config().hold);
+  HWND sensitivity = GetDlgItem(window, MAINSENS), hz = GetDlgItem(window, MAINHZ);
+  SendMessageW(sensitivity, TBM_SETPOS, TRUE, 145);
+  SendMessageW(window, WM_HSCROLL, 0, reinterpret_cast<LPARAM>(sensitivity));
+  check("sensitivitySliderChangesEngineValue", std::abs(state.config().sensitivity - 1.45) < 1e-9);
+  SendMessageW(hz, TBM_SETPOS, TRUE, 180);
+  SendMessageW(window, WM_HSCROLL, 0, reinterpret_cast<LPARAM>(hz));
+  check("frequencySliderChangesEngineValue", state.config().hz == 180);
+  SetWindowTextW(ui.cps, L"23.43");
+  SetWindowTextW(ui.duty, L"40.5");
+  applyEdits();
+  check("decimalCpsDutyFieldsReachEngine",
+        std::abs(state.config().cps - 23.43) < 1e-9 && std::abs(state.config().duty - .405) < 1e-9);
+  ui.scroll = 1000;
+  layout();
+  check("scrollRevealsCaptureSelector", (GetWindowLongPtrW(ui.source, GWL_STYLE) & WS_VISIBLE) != 0);
+  command(PREVIEW, 0);
+  check("previewButtonOpensPreview", ui.previewVisible && ui.preview.right > ui.preview.left);
+  command(PREVIEW, 0);
+  check("previewButtonReturnsToCompact", !ui.previewVisible);
+  command(BIND, 0);
+  captureBinding(1, 4);
+  check("mouseBindingRecorderStoresSideButton",
+        state.config().bindKind == 1 && state.config().bindCode == 4 && !ui.recording);
+  state.source = window;
+  command(SCAN, 0);
+  check("startScanButtonArmsCaptureState", state.scan);
+  command(ARM, 0);
+  check("activateInputButtonArmsWithoutPostingEvents", state.armed);
+  command(STOP, 0);
+  check("stopAllButtonClearsCaptureAndInput", !state.scan && !state.armed);
+  bool passed = std::all_of(checks.begin(), checks.end(), [](auto &c) { return c.second; });
+  std::ofstream out(report);
+  out << "{\n\"passed\":" << (passed ? "true" : "false") << ",\n\"checks\":{";
+  for (size_t i = 0; i < checks.size(); ++i) {
+    if (i)
+      out << ",";
+    out << "\n\"" << checks[i].first << "\":" << (checks[i].second ? "true" : "false");
+  }
+  out << "},\n\"scope\":\"Native hidden owned-window controls exercised through Win32 messages and "
+         "production handlers. No hooks, input thread, screen capture, saved-setting writes or game input. "
+         "Physical hotkey delivery is not tested.\"\n}";
+  return passed ? 0 : 1;
+}
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
   SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -1245,7 +1508,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
     LocalFree(argv);
     return result;
   }
-  std::filesystem::path renderPath;
+  std::filesystem::path renderPath, uiTestPath;
+  if (argc == 3 && std::wstring(argv[1]) == L"--ui-test") {
+    ui.testing = true;
+    uiTestPath = argv[2];
+  }
   if (argc == 3 && std::wstring(argv[1]) == L"--render-test") {
     ui.testing = true;
     renderPath = argv[2];
@@ -1277,18 +1544,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
       status("Preset import failed; settings will use defaults");
     }
   state.settings = ui.testing ? Settings{} : loadSettings();
-  try {
-    auto folder = dataFolder() / L"AvatarViews";
-    for (int i = 0; i < 6; i++) {
-      auto file = folder / (L"view" + std::to_wstring(i) + L".bmp");
-      if (std::filesystem::exists(file)) {
-        auto im = loadBMP(file);
-        state.own.push_back(describe(im, {0, 0, 1, 1}));
+  if (!ui.testing)
+    try {
+      auto folder = dataFolder() / L"AvatarViews";
+      for (int i = 0; i < 6; i++) {
+        auto file = folder / (L"view" + std::to_wstring(i) + L".bmp");
+        if (std::filesystem::exists(file)) {
+          auto im = loadBMP(file);
+          state.own.push_back(describe(im, {0, 0, 1, 1}));
+        }
       }
+    } catch (...) {
+      status("Could not load an avatar reference; mark yourself again");
     }
-  } catch (...) {
-    status("Could not load an avatar reference; mark yourself again");
-  }
   WNDCLASSEXW cls{};
   cls.cbSize = sizeof(cls);
   cls.lpfnWndProc = windowProc;
@@ -1300,13 +1568,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
   cls.lpfnWndProc = settingsProc;
   cls.lpszClassName = L"LuxwareSettings";
   RegisterClassExW(&cls);
-  HWND window = CreateWindowExW(0, L"LuxwareWindows", L"Luxware", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                                CW_USEDEFAULT, 1240, 930, nullptr, nullptr, instance, nullptr);
+  RECT workArea{};
+  SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
+  int initialHeight = std::clamp(int(workArea.bottom - workArea.top) - 40, 640, 900);
+  HWND window =
+      CreateWindowExW(0, L"LuxwareWindows", L"Luxware", WS_OVERLAPPEDWINDOW | WS_VSCROLL, CW_USEDEFAULT,
+                      CW_USEDEFAULT, 436, initialHeight, nullptr, nullptr, instance, nullptr);
   if (!window) {
     MessageBoxW(nullptr, L"Luxware could not create its window.", L"Luxware", MB_ICONERROR);
     return 1;
   }
+  if (!uiTestPath.empty()) {
+    int result = runUITests(window, uiTestPath);
+    DestroyWindow(window);
+    return result;
+  }
   if (ui.testing) {
+    togglePreview();
     try {
       Model model;
       model.load(appFolder() / L"Models/LuxwarePlayers.onnx", false);
@@ -1333,7 +1611,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
     } catch (const std::exception &e) {
       state.modelError = e.what();
     }
-    SetWindowTextW(GetDlgItem(window, BIND), (L"Bind: " + bindingName(state.settings)).c_str());
+    SetWindowTextW(GetDlgItem(window, BIND), L"Change");
     status("Owned UI render: actual recorded-image inference; no capture, input or hooks");
     renderOwnWindow(renderPath);
     DestroyWindow(window);

@@ -1,4 +1,4 @@
-# Luxware for Windows 1.1.2 (x64)
+# Luxware for Windows 1.2.0 (x64)
 
 This is a compiled native Windows application, using the same genuinely trained player weights as the Mac app. It is a C++/Win32 port with actual DXGI Desktop Duplication/GDI screen capture, ONNX Runtime inference and standard Windows SendInput. It is not a renamed Mac bundle, an aim trainer, a video playback system or invented detection boxes. No Python installation, API key, cloud upload or account is needed to run the packaged executable. The updater uses the built-in Windows PowerShell 5.1 and contacts GitHub for releases.
 
@@ -68,3 +68,13 @@ Native test reports include a generated-image preprocessing microbenchmark, maxi
 ## 1.1.2 no-player change
 
 No player detected means ordinary auto clicking with a free mouse. Level return and template-only mouse correction are disabled, and obsolete level-return controls are removed. Production-dispatch regressions verify movement for a current observation, stopping after loss even with the old level setting, continued balanced click events, and no movement from stale, weak or template-only observations. Tests use an injected event sink and explicit controlled observations; they do not post events to a game.
+
+## 1.2.0 reference-style controls and confirmation
+
+The visible panel around 5:00–5:07 in the supplied video is recreated as a compact black/red Luxware control panel: First/Third Person tabs, hotkey/Change card, Hold/Toggle buttons, sensitivity and tracking-frequency sliders. The active perspective changes the real input mode; the two tabs currently share the saved binding and tuning values. Original branding, hidden Advanced options and unprovided internals are not claimed to be reproduced. Auto clicker CPS/duty remain visible. Scroll down for one-entity/reset, your avatar reference, capture-window selection and detector controls. Preview expands a real pixel/detection preview beside the compact panel.
+
+A target must now have two matching consecutive model observations before aiming. A missing observation immediately leaves the mouse free while activated clicks continue. A remembered ID alone never produces a box or movement. Target or perspective changes reset accumulated smoothing and correction so a previous target's direction does not carry over. This confirmation reduces single-frame false locks at the cost of waiting for the next analysis frame; it cannot reject every persistent model false positive.
+
+The trained model and saved-self pixel descriptors are unchanged. The creator's weights/source are not available from the video, and identical PvP accuracy or perfect ownership recognition cannot be promised. Similar outfits, unseen avatars and occlusion remain limitations. No screen images or personal avatar references are uploaded by updates.
+
+Native UI tests create a hidden owned window and exercise real controls/production handlers for mode tabs, activation modes, sliders, decimal fields, capture-state start/stop, preview expansion, scrolling and mouse-button binding storage. They install no hooks, run no input thread and do not write user settings or control a game.

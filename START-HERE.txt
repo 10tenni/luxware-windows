@@ -33,3 +33,9 @@ verified. Read README.md and VALIDATION.md for exact scope and troubleshooting.
 UPDATES: Version 1.1 checks and downloads from the official GitHub release location on launch.
 Open Updates, then Install update when ready. Disable automatic checks in Settings if wanted.
 Version 1.0 needs this new ZIP extracted manually once. Keep the app in a writable folder.
+
+1.2 COMPACT PANEL: First/Third Person tabs choose camera/free-cursor input. Use Change to bind,
+Hold/Toggle for activation mode, and the red sliders for sensitivity/movement rate. Scroll down
+for One entity, Reset, Update my avatar, capture-window selection and detector controls.
+Preview expands the actual capture/detection preview. Settings contains remaining tuning.
+Player lock now requires two consecutive neural observations. No detection still means no movement.

@@ -39,3 +39,9 @@ The 1.1.1 pre-release MSVC Windows runner passed 17 core/performance checks and 
 ## 1.1.2 target-loss dispatch
 
 Eight additional regressions drive the production input loop through an injected sink. They cover initial no-player clicking, movement for an explicit current observation, zero movement after loss beyond the former level-return grace period, continued clicks during loss, rejected template/low-confidence/stale observations, and balanced click pairs. Synthetic observations are explicit test inputs, separate from recorded-model checks. Earlier level-return utility regressions remain historical compatibility tests; the production loop no longer calls that utility. Native reports and release workflow identify the actual host and passing counts.
+
+## 1.2.0 observed reference and new tests
+
+The supplied local video was inspected at full-resolution frames 297–310 seconds and gameplay frames through 390 seconds. It visibly shows a black/red compact panel, First/Third Person tabs, hotkey Change control, Hold/Toggle, sensitivity and a 240 Hz movement-frequency setting. Screenshots demonstrate appearance/behavior, not the creator's implementation or learned weights. Luxware uses its own existing detector and retains its branding. The exact hidden Advanced panel and performance equivalence are not asserted.
+
+New regressions verify rejecting an isolated proposal, confirming consecutive current observations, no remembered-box output during loss, and clearing correction on target/perspective changes. Owned hidden-window UI tests exercise actual controls without installing hooks, starting input/capture or writing saved settings. Physical mouse/key delivery and live-game aim quality still require a PC gameplay test. Private recorded regressions continue locally, not as an independent accuracy benchmark.

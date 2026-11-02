@@ -264,8 +264,10 @@ inline void inputLoop(
   ClickClock clock;
   bool osHeld = false, heldRight = false;
   Rates clicks, moves;
-  double nextMove = 0, lastHz = 0, frameTime = 0, appliedX = 0, appliedY = 0, filterX = 0, filterY = 0,
-         lastMotion = 0, lastRates = 0;
+  AimMemory correction;
+  double nextMove = 0, lastHz = 0, lastRates = 0;
+  auto &frameTime = correction.frameTime, &appliedX = correction.appliedX, &appliedY = correction.appliedY,
+       &filterX = correction.filterX, &filterY = correction.filterY, &lastMotion = correction.lastMotion;
   auto send = [&](DWORD flags, LONG x, LONG y) {
     INPUT i{};
     i.type = INPUT_MOUSE;
@@ -326,8 +328,7 @@ inline void inputLoop(
     if (!allowed) {
       clock.tick(t, false, s.cps, s.duty);
       nextMove = t;
-      frameTime = 0;
-      appliedX = appliedY = filterX = filterY = lastMotion = 0;
+      correction.clear();
 
     } else {
       auto action = osHeld ? ClickClock::none : clock.tick(t, s.clicks, s.cps, s.duty);
@@ -354,10 +355,7 @@ inline void inputLoop(
                      t - received < .2 && s.strength > 0;
         if (valid) {
           double centerX = client.x + client.w / 2, centerY = client.y + client.h / 2;
-          if (frameTime != received) {
-            frameTime = received;
-            appliedX = appliedY = 0;
-          }
+          correction.observe(target->id, s.camera, received);
           double ex = client.x + target->box.cx() * client.w - (s.camera ? centerX : pointer.x),
                  ey = client.y + target->box.cy() * client.h - (s.camera ? centerY : pointer.y);
           if (s.camera) {
@@ -399,8 +397,7 @@ inline void inputLoop(
             }
           }
         } else {
-          frameTime = 0;
-          appliedX = appliedY = filterX = filterY = lastMotion = 0;
+          correction.clear();
           // No detections: release camera/cursor control completely. Click phases above continue.
         }
       }

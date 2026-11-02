@@ -250,10 +250,12 @@ inline std::vector<Detection> decode(const float *data, const std::vector<int64_
 struct Track {
   Detection d;
   double vx = 0, vy = 0, time = 0;
+  unsigned confirmations = 1;
 };
 class Tracker {
   std::vector<Track> memory;
   int serial = 1;
+  double lastUpdate = 0;
   std::optional<int> selected;
   std::optional<Track> reference;
   std::optional<Feature> anchor;
@@ -262,6 +264,7 @@ public:
   std::string note = "Waiting for detections";
   void reset() {
     memory.clear();
+    lastUpdate = 0;
     selected.reset();
     reference.reset();
     anchor.reset();
@@ -356,6 +359,7 @@ public:
         auto &o = old[j];
         double dt = std::max(.001, t - o.time);
         n.d.id = o.d.id;
+        n.confirmations = dt <= .2 && o.time == lastUpdate ? std::min(100u, o.confirmations + 1) : 1;
         if (dt <= .18) {
           n.vx = (n.d.box.cx() - o.d.box.cx()) / dt * .5 + o.vx * .5;
           n.vy = (n.d.box.cy() - o.d.box.cy()) / dt * .5 + o.vy * .5;
@@ -364,6 +368,7 @@ public:
         n.d.id = serial++;
       next.push_back(n);
     }
+    lastUpdate = t;
     memory = next;
     for (int j = 0; j < int(old.size()); j++)
       if (!used[j])
@@ -373,7 +378,7 @@ public:
   std::optional<Track> choose(const std::vector<Track> &values, double t, double fov, bool single) {
     if (selected)
       for (auto &d : values)
-        if (d.d.id == *selected) {
+        if (d.d.id == *selected && d.confirmations >= 2) {
           if (!d.d.visual) {
             reference = d;
             if (!anchor)
@@ -390,6 +395,8 @@ public:
     const Track *best = nullptr;
     double nearest = 10;
     for (auto &d : values) {
+      if (d.confirmations < 2)
+        continue;
       double dist = std::hypot(d.d.box.cx() - .5, d.d.box.cy() - .5);
       if (dist <= fov && dist < nearest) {
         best = &d;
@@ -407,11 +414,30 @@ public:
     reference.reset();
     anchor.reset();
     note = values.empty() ? "Waiting for eligible entity detections"
-                          : "No entity in FOV: center one or widen FOV";
+                          : "Confirming current player / checking FOV";
     return {};
   }
 };
 
+struct AimMemory {
+  double frameTime = 0, appliedX = 0, appliedY = 0, filterX = 0, filterY = 0, lastMotion = 0;
+  int targetID = 0;
+  bool camera = true;
+  void clear() {
+    *this = AimMemory{};
+  }
+  void observe(int id, bool view, double received) {
+    if (targetID != id || camera != view) {
+      clear();
+      targetID = id;
+      camera = view;
+    }
+    if (frameTime != received) {
+      frameTime = received;
+      appliedX = appliedY = 0;
+    }
+  }
+};
 struct LevelReturn {
   bool calibrated = false, returning = false;
   double offset = 0, lastTarget = 0, began = 0;
