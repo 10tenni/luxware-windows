@@ -26,8 +26,8 @@ vendor headers, model/export sources and licenses. Personal source training imag
 The shipped unsigned PowerShell script is copied to a per-check local cache before running.
 It never evaluates instructions from the release manifest, installs a driver, requests elevation,
 changes machine execution policy, or writes into saved settings. Installation waits for the exact
-app process to exit, then swaps prepared folders on the install volume. If replacement fails,
-the old folder is restored. A backup of the prior folder is retained for manual rollback.
+app process to exit, then replaces only files owned by the package. If replacement fails,
+changed files are restored from backup. A backup of replaced files is retained for manual rollback.
 
 Users upgrading from Windows 1.0 must download/extract 1.1 once. Their existing local settings
 are retained. Unpublished or offline feeds show an update error while the main app remains usable.

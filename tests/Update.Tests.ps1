@@ -51,6 +51,7 @@ try {
     $target=Join-Path $root 'installed';[IO.Directory]::CreateDirectory($target)|Out-Null
     [IO.File]::WriteAllText((Join-Path $target 'Luxware.exe'),'old version')
     [IO.File]::WriteAllText((Join-Path $target 'release.json'),'{"appId":"luxware-windows-x64","version":"1.1.0"}')
+    [IO.File]::WriteAllText((Join-Path $target 'unrelated.txt'),'keep unrelated file')
     $userData=Join-Path $root 'user-settings.ini';[IO.File]::WriteAllText($userData,'user settings remain')
     Check 'failedReplacementRollsBack' {
         Must-Fail { Install-Payload $extracted $target '1.2.0' { throw 'Injected failure after backup' } }
@@ -61,6 +62,7 @@ try {
         if ((Get-Content (Join-Path $target 'release.json') -Raw|ConvertFrom-Json).version -ne '1.2.0' -or
             (Get-Content (Join-Path $backup 'Luxware.exe') -Raw) -ne 'old version') { throw 'Install failed' }
     }
+    Check 'unrelatedInstallFilesPreserved' { if ((Get-Content (Join-Path $target 'unrelated.txt') -Raw) -ne 'keep unrelated file') { throw 'Unrelated file changed' } }
     Check 'settingsPreserved' { if ((Get-Content $userData -Raw) -ne 'user settings remain') { throw 'User data changed' } }
     Check 'repeatInstallRejected' { Must-Fail { Install-Payload $extracted $target '1.2.0' } }
     $reportObject=@{passed=$true;checks=$results;host=$PSVersionTable.OS;scope='Updater manifest, checksum, ZIP validation, filesystem replacement and forced rollback on temporary fixtures; no live app replaced.'}

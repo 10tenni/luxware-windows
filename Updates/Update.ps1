@@ -83,7 +83,8 @@ function Expand-Package([string]$Zip, [string]$Destination) {
             if ($n -notmatch '^Luxware/' -or $n -match '(^|/)\.\.?(/|$)|:|[\x00-\x1f]' -or
                 $n.StartsWith('/') -or $n.Contains('//') -or $n.Split('/') -match '[. ]$' -or
                 (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000 -or
-                !$names.Add($n.TrimEnd('/')) -or $expanded -gt 1073741824) {
+                !$names.Add($n.TrimEnd('/')) -or $expanded -gt 1073741824 -or $archive.Entries.Count -gt 5000 -or
+                $n -match '(?i)(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])([./]|$)') {
                 throw 'Unsafe or oversized update archive.'
             }
         }
@@ -105,23 +106,51 @@ function Install-Payload([string]$Payload, [string]$Target, [string]$Version, [s
     $next = Get-Content -LiteralPath (Join-Path $Payload 'release.json') -Raw | ConvertFrom-Json
     if ($identity.appId -ne $script:AppId -or $next.appId -ne $script:AppId -or $next.version -ne $Version -or
         [Version]$Version -le [Version]$identity.version) { throw 'Update identity or version mismatch.' }
-    # Copy beside the installation BEFORE touching it; rename stays on the same volume.
+    # Only replace files owned by this package. Never rename/delete the user's app folder.
     $sibling = $targetPath + '.incoming-' + [Guid]::NewGuid().ToString('N')
     $backup = $targetPath + '.previous-' + [Guid]::NewGuid().ToString('N')
+    $applied = New-Object 'Collections.Generic.List[object]'
     try {
         Copy-Item -LiteralPath $Payload -Destination $sibling -Recurse
-        Move-Item -LiteralPath $targetPath -Destination $backup
+        $files = @(Get-ChildItem -LiteralPath $sibling -Recurse -File)
+        [IO.Directory]::CreateDirectory($backup) | Out-Null
+        foreach ($file in $files) {
+            $relative = $file.FullName.Substring($sibling.Length + 1)
+            $destination = Join-Path $targetPath $relative
+            $old = Join-Path $backup $relative
+            if (Test-Path -LiteralPath $destination -PathType Container) { throw 'An update file collides with a directory.' }
+            if (Test-Path -LiteralPath $destination) {
+                [IO.Directory]::CreateDirectory((Split-Path $old)) | Out-Null
+                Copy-Item -LiteralPath $destination -Destination $old
+            }
+        }
         try {
-            & $AfterBackup
-            Move-Item -LiteralPath $sibling -Destination $targetPath
+            foreach ($file in $files) {
+                $relative = $file.FullName.Substring($sibling.Length + 1)
+                $destination = Join-Path $targetPath $relative
+                $old = Join-Path $backup $relative
+                [IO.Directory]::CreateDirectory((Split-Path $destination)) | Out-Null
+                # Register before copying so a failed/partial write also restores its original.
+                $applied.Add(@{Destination=$destination;Backup=$old})
+                Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+                if ($applied.Count -eq 1) { & $AfterBackup }
+            }
         } catch {
-            Move-Item -LiteralPath $backup -Destination $targetPath
-            throw
+            $failure = $_
+            for ($i=$applied.Count-1; $i -ge 0; $i--) {
+                $item = $applied[$i]
+                if (Test-Path -LiteralPath $item.Backup) {
+                    Copy-Item -LiteralPath $item.Backup -Destination $item.Destination -Force
+                } elseif (Test-Path -LiteralPath $item.Destination) {
+                    Remove-Item -LiteralPath $item.Destination -Force
+                }
+            }
+            throw $failure
         }
     } finally {
         if (Test-Path -LiteralPath $sibling) { Remove-Item -LiteralPath $sibling -Recurse -Force }
     }
-    # Leave this previous-version folder for manual rollback; never touch user settings.
+    # Keep original replaced files for manual rollback. Unrelated files are untouched.
     return $backup
 }
 function Write-Status([string]$State, [string]$Message) {

@@ -24,14 +24,15 @@ jobs:
         shell: powershell
         run: |
           $p = Start-Process -FilePath ./build-windows/Release/Luxware.exe -ArgumentList '--core-test', 'NativeCoreTestResults.json' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw 'Core checks failed' }
-          Get-Content NativeCoreTestResults.json
+          if (Test-Path NativeCoreTestResults.json) { Get-Content NativeCoreTestResults.json }
+          if ($p.ExitCode -ne 0) { throw "Core checks failed: $($p.ExitCode)" }
       - name: Windows PowerShell 5.1 updater checks
         shell: powershell
         run: ./tests/Update.Tests.ps1 -Report NativeUpdaterTestResults.json
       - name: Package clean release
         run: python tools/package_windows.py --binary-dir build-windows/Release --output dist
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Luxware-Windows-x64
           path: |

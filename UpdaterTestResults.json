@@ -1,7 +1,6 @@
 {
   "scope": "Updater manifest, checksum, ZIP validation, filesystem replacement and forced rollback on temporary fixtures; no live app replaced.",
   "passed": true,
-  "host": "macOS 26.7.1",
   "checks": {
     "semanticVersionOrdering": true,
     "sameVersionNoUpdate": true,
@@ -19,7 +18,9 @@
     "caseCollisionRejected": true,
     "failedReplacementRollsBack": true,
     "successfulReplacementKeepsBackup": true,
+    "unrelatedInstallFilesPreserved": true,
     "settingsPreserved": true,
     "repeatInstallRejected": true
-  }
+  },
+  "host": "macOS 26.7.1"
 }
