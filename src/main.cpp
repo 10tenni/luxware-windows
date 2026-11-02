@@ -565,12 +565,14 @@ void paint(HWND window, HDC dc) {
     inputEngaged = (!s.hold || state.bindingHeld) && front(state.source) && now() - v.received < .5 &&
                    contains(v.client, cursor);
   }
-  text(dc, 23, 111,
-       state.armed ? (v.target   ? L"TRACKING"
-                      : s.clicks ? L"CLICKING"
-                                 : L"ARMED")
-                   : L"IDLE",
-       state.armed ? red : muted, ui.mono);
+  bool currentPlayer = v.target && !v.target->visual && v.target->score >= s.confidence &&
+                       now() - v.received < .2 && s.aim && s.strength > 0;
+  const wchar_t *badge = !state.armed    ? L"IDLE"
+                         : !inputEngaged ? L"ARMED"
+                         : currentPlayer ? L"TRACKING"
+                         : s.clicks      ? L"CLICKING"
+                                         : L"ARMED";
+  text(dc, 23, 111, badge, state.armed ? red : muted, ui.mono);
   if (ui.previewVisible && ui.preview.right > ui.preview.left) {
     HBRUSH black = CreateSolidBrush(RGB(3, 3, 5));
     FillRect(dc, &ui.preview, black);
