@@ -451,6 +451,51 @@ public:
   }
 };
 
+// Estimate image-space target motion after accounting for this app's camera input.
+// This adjusts a correction for a CURRENT observation; it never creates a detection.
+class FrameLead {
+  int identity = 0, samples = 0;
+  bool camera = true;
+  double captured = 0, x = 0, y = 0, vx = 0, vy = 0;
+
+public:
+  void clear() {
+    *this = FrameLead{};
+  }
+  void observe(int id, bool view, double time, double mx, double my, MotionHistory &history) {
+    if (identity != id || camera != view || time < captured || time - captured > .2) {
+      clear();
+      identity = id;
+      camera = view;
+    }
+    if (samples && time == captured)
+      return;
+    if (samples) {
+      double dt = time - captured;
+      auto moved = view ? history.after(captured, time) : std::pair<double, double>{};
+      double nx = (mx - x + moved.first) / std::max(.002, dt),
+             ny = (my - y + moved.second) / std::max(.002, dt);
+      if (dt < .002 || std::abs(nx) > 2500 || std::abs(ny) > 2500) {
+        samples = 0;
+        vx = vy = 0;
+      } else {
+        vx = samples == 1 || nx * vx < 0 ? nx : .65 * nx + .35 * vx;
+        vy = samples == 1 || ny * vy < 0 ? ny : .65 * ny + .35 * vy;
+      }
+    }
+    x = mx;
+    y = my;
+    captured = time;
+    samples = std::min(samples + 1, 64);
+  }
+  std::pair<double, double> offset(double age, double extra, double maxX, double maxY) const {
+    if (samples < 2 || age < 0 || age >= .2 || extra <= 0)
+      return {};
+    double horizon = std::clamp(age + extra, 0., .1);
+    return {std::clamp(vx * horizon, -maxX, maxX), std::clamp(vy * horizon, -maxY, maxY)};
+  }
+};
+
 struct AimMemory {
   double frameTime = 0, appliedX = 0, appliedY = 0, filterX = 0, filterY = 0, lastMotion = 0;
   int targetID = 0;

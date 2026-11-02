@@ -748,8 +748,8 @@ void drawButton(DRAWITEMSTRUCT *d) {
 LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
   if (m == WM_CREATE) {
     const wchar_t *names[] = {
-        L"Aim strength",         L"Smoothing",       L"Camera sensitivity", L"Acquire FOV",
-        L"Detection confidence", L"Prediction (ms)", L"Analysis FPS limit", L"Movement Hz limit"};
+        L"Aim strength",         L"Smoothing",        L"Camera sensitivity", L"Acquire FOV",
+        L"Detection confidence", L"Target lead (ms)", L"Analysis FPS limit", L"Movement Hz limit"};
     auto s = state.config();
     int lows[] = {0, 0, 10, 5, 10, 0, 5, 5}, highs[] = {100, 95, 300, 71, 99, 100, 240, 240};
     int values[] = {int(s.strength * 100),

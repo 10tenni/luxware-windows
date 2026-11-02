@@ -254,12 +254,6 @@ inline void worker(Shared &shared) {
         std::optional<Detection> target;
         if (chosen)
           target = chosen->d; // Only current neural detections may drive input.
-        if (target && !target->visual) {
-          target->box.x += std::clamp(chosen->vx * s.prediction, -.05, .05);
-          target->box.y += std::clamp(chosen->vy * s.prediction, -.05, .05);
-          target->box.x = std::clamp(target->box.x, 0., 1 - target->box.w);
-          target->box.y = std::clamp(target->box.y, 0., 1 - target->box.h);
-        }
         detections.clear();
         for (auto &t : tracks)
           detections.push_back(t.d);
@@ -313,7 +307,9 @@ inline void inputLoop(
   Rates clicks, moves;
   AimMemory correction;
   MotionHistory motion;
+  FrameLead lead;
   HWND motionSource = nullptr;
+  bool motionCamera = true;
   double motionWidth = 0, motionHeight = 0;
   double nextMove = 0, lastHz = 0, lastRates = 0;
   auto &frameTime = correction.frameTime, &appliedX = correction.appliedX, &appliedY = correction.appliedY,
@@ -370,9 +366,12 @@ inline void inputLoop(
     }
     POINT pointer = cursor();
     HWND source = shared.source.load();
-    if (source != motionSource || client.w != motionWidth || client.h != motionHeight || !s.camera) {
+    if (source != motionSource || client.w != motionWidth || client.h != motionHeight ||
+        motionCamera != s.camera) {
       motion.clear();
+      lead.clear();
       motionSource = source;
+      motionCamera = s.camera;
       motionWidth = client.w;
       motionHeight = client.h;
     }
@@ -387,6 +386,7 @@ inline void inputLoop(
       nextMove = t;
       correction.clear();
       motion.clear();
+      lead.clear();
     } else {
       auto action = osHeld ? ClickClock::none : clock.tick(t, s.clicks, s.cps, s.duty);
       if (action == ClickClock::down && !osHeld) {
@@ -415,6 +415,13 @@ inline void inputLoop(
           correction.observe(target->id, s.camera, received);
           double ex = client.x + target->box.cx() * client.w - (s.camera ? centerX : pointer.x),
                  ey = client.y + target->box.cy() * client.h - (s.camera ? centerY : pointer.y);
+          lead.observe(target->id, s.camera, received, target->box.cx() * client.w - client.w / 2,
+                       target->box.cy() * client.h - client.h / 2, motion);
+          auto forecast =
+              lead.offset(t - received, s.prediction, std::clamp(target->box.w * client.w * .5, 8., 60.),
+                          std::clamp(target->box.h * client.h * .35, 8., 60.));
+          ex += forecast.first;
+          ey += forecast.second;
           if (s.camera) {
             auto inFlight = motion.after(received, t);
             ex -= inFlight.first;
@@ -457,6 +464,7 @@ inline void inputLoop(
           }
         } else {
           correction.clear();
+          lead.clear();
           // No detections: release camera/cursor control completely. Click phases above continue.
         }
       }

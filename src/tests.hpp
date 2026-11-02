@@ -254,39 +254,69 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     history.record(2, 12, 4);
     history.clear();
     check("cameraHistoryClearRemovesPriorContext", history.after(1.9, 2.1).first == 0);
-    // Explicit idealized linear-camera simulation: capture-to-result delay, not a live-game benchmark.
+    MotionHistory cameraSamples;
+    FrameLead velocity;
+    velocity.observe(1, true, 1, 100, 0, cameraSamples);
+    cameraSamples.record(1.01, 20, 0);
+    velocity.observe(1, true, 1.05, 90, 0, cameraSamples);
+    auto predicted = velocity.offset(.05, .001, 60, 60);
+    check("leadSeparatesTargetMotionFromAcceptedCameraInput", std::abs(predicted.first - 10.2) < 1e-6);
+    check("zeroPredictionSettingDisablesOptionalLead", velocity.offset(.05, 0, 60, 60).first == 0);
+    FrameLead cursorLead;
+    cursorLead.observe(1, false, 1, 100, 0, cameraSamples);
+    cursorLead.observe(1, false, 1.05, 110, 0, cameraSamples);
+    check("freeCursorLeadUsesScreenMotionWithoutCameraDelta",
+          std::abs(cursorLead.offset(.05, .001, 60, 60).first - 10.2) < 1e-6);
+    velocity.observe(2, true, 1.07, -80, 0, cameraSamples);
+    check("leadResetsForDifferentTarget", velocity.offset(.05, .01, 60, 60).first == 0);
+    velocity.observe(2, true, 1.08, 1000, 0, cameraSamples);
+    check("leadRejectsDiscontinuousImageJumps", velocity.offset(.05, .01, 60, 60).first == 0);
+    // Explicit idealized LINEAR camera with SERIAL capture/inference and smoothing.
+    // It uses the production input budget cadence; it is not a live-game accuracy benchmark.
     auto delayedScene = [&](bool compensated, double latency, bool moving) {
       struct Frame {
         double captured, ready, error;
       };
       std::deque<Frame> queue;
       MotionHistory inFlight;
-      double camera = 0, observedError = 0, captured = 0, oldApplied = 0, errorSum = 0;
+      FrameLead targetLead;
+      double camera = 0, observedError = 0, captured = 0, oldApplied = 0, errorSum = 0, nextCapture = 0,
+             filtered = 0;
       int count = 0;
       bool available = false;
-      for (int tick = 0; tick < 480; ++tick) {
+      for (int tick = 0; tick < 960; ++tick) {
         double t = tick / 240.;
-        double target = 240 + (moving ? 80 * std::sin(6.28318530718 * t) : 0);
-        if (tick % 4 == 0)
+        double target = 600 + (moving ? 80 * std::sin(6.28318530718 * t) : 0);
+        if (queue.empty() && t >= nextCapture)
           queue.push_back({t, t + latency, target - camera});
-        while (!queue.empty() && queue.front().ready <= t) {
+        if (!queue.empty() && queue.front().ready <= t) {
           auto f = queue.front();
           queue.pop_front();
           observedError = f.error;
           captured = f.captured;
           oldApplied = 0;
           available = true;
+          nextCapture = t + analysisDelay(latency, 60, true, true);
+          if (compensated)
+            targetLead.observe(1, true, captured, observedError, 0, inFlight);
         }
         if (available && t - captured < .2) {
           double correction = observedError - (compensated ? inFlight.after(captured, t).first : oldApplied);
-          if (std::abs(correction) > 3) {
-            double movement = std::round(std::clamp(correction, -180., 180.));
+          if (compensated && moving)
+            correction += targetLead.offset(t - captured, .001, 60, 60).first;
+          filtered += .08 * (correction - filtered);
+          double movement =
+              filtered * correction > 0
+                  ? std::copysign(std::min({180., std::abs(filtered), std::abs(correction)}), correction)
+                  : 0;
+          if (std::abs(filtered) > 3) {
+            movement = std::round(movement);
             camera += movement;
             oldApplied += movement;
             inFlight.record(t + 1e-7, movement, 0);
           }
         }
-        if (t > .3) {
+        if (t > .5) {
           errorSum += std::abs(target - camera);
           ++count;
         }
@@ -296,11 +326,11 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     bool staticSettles = true;
     for (double latency : {1. / 60, .05, .10})
       staticSettles = delayedScene(true, latency, false) <= 3 && staticSettles;
-    check("compensatedStaticAimSettlesAcrossInferenceDelays", staticSettles);
+    check("compensatedStaticAimSettlesAcrossSerialInferenceDelays", staticSettles);
     delayedBaselineError = delayedScene(false, .05, true);
     delayedCompensatedError = delayedScene(true, .05, true);
-    check("compensationReducesMovingTargetErrorInLinearDelayModel",
-          delayedCompensatedError < delayedBaselineError * .5);
+    check("optionalLeadReducesMovingErrorInSerialLinearModel",
+          delayedCompensatedError < delayedBaselineError * .85);
     SelfGuard ownGuard;
     Feature ownSignature{};
     Detection ownProposal{{.4, .5, .15, .3}, .9f, 0, false, ownSignature};
