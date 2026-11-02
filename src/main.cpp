@@ -558,6 +558,13 @@ void paint(HWND window, HDC dc) {
   card(876, 140, L"Capture & detector");
   text(dc, 32, 996 - ui.scroll, wide(provider), muted, ui.mono);
   RestoreDC(dc, saved);
+  bool inputEngaged = false;
+  if (state.armed) {
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    inputEngaged = (!s.hold || state.bindingHeld) && front(state.source) && now() - v.received < .5 &&
+                   contains(v.client, cursor);
+  }
   text(dc, 23, 111,
        state.armed ? (v.target   ? L"TRACKING"
                       : s.clicks ? L"CLICKING"
@@ -620,13 +627,18 @@ void paint(HWND window, HDC dc) {
     text(dc, 416, 72, L"DETECTION PREVIEW", red, ui.mono);
     text(dc, 416, h - 80, wide(error.empty() ? method : error), muted, ui.mono);
   }
-  std::wstring stats = number(now() - v.received > .5 ? 0 : v.fps, 0) + L" FPS  |  " + number(v.ms, 1) +
-                       L" ms  |  " + number(cps, 2) + L" CPS | " + number(moves, 0) + L" moves/s";
+  std::wstring stats = number(now() - v.received > .5 ? 0 : v.fps, 0) + L"fps " + number(v.ms, 1) + L"ms | " +
+                       number(cps, 2) + L"cps | " + number(moves, 0) + L"/s | CPU" + number(cpuUsage(), 0) +
+                       L"%";
   text(dc, 22, h - 49, stats, RGB(190, 190, 202), ui.mono);
   std::string note =
       !inputError.empty()       ? inputError
       : !error.empty()          ? error
       : now() < ui.messageUntil ? ui.message
+      : state.armed && !inputEngaged
+          ? (s.hold && !state.bindingHeld ? "Hold the activation binding"
+             : !front(state.source)       ? "Paused: focus the selected game window"
+                                          : "Paused: fresh capture and pointer inside game required")
       : state.armed
           ? (v.target ? "Tracking confirmed player"
                       : (s.clicks ? "No player: mouse free; auto clicker active" : "No player: mouse free"))
@@ -1038,8 +1050,11 @@ void command(int id, int notification) {
       state.scan = true;
       resetSelection();
       status("Scanning: focus the selected game window");
-    } else
-      status("Select a visible window first");
+    } else {
+      ui.scroll = 1000;
+      layout();
+      status("Select a visible capture window below, then Start scan");
+    }
     return;
   }
   if (id == ARM) {
