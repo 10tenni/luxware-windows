@@ -1,4 +1,4 @@
-# Luxware for Windows 1.2.0 (x64)
+# Luxware for Windows 1.2.1 (x64)
 
 This is a compiled native Windows application, using the same genuinely trained player weights as the Mac app. It is a C++/Win32 port with actual DXGI Desktop Duplication/GDI screen capture, ONNX Runtime inference and standard Windows SendInput. It is not a renamed Mac bundle, an aim trainer, a video playback system or invented detection boxes. No Python installation, API key, cloud upload or account is needed to run the packaged executable. The updater uses the built-in Windows PowerShell 5.1 and contacts GitHub for releases.
 
@@ -78,3 +78,5 @@ A target must now have two matching consecutive model observations before aiming
 The trained model and saved-self pixel descriptor format are unchanged. Self exclusion now also carries a known own-avatar pixel match across overlapping current proposals for up to 150 ms through small appearance changes. This exclusion-only memory never creates an aiming target; it expires and is cleared on resets/source changes. Ambiguous overlapping lookalikes may be excluded too, and perfect ownership recognition remains impossible from these descriptors alone. The creator's weights/source are not available from the video, and identical PvP accuracy or perfect ownership recognition cannot be promised. Similar outfits, unseen avatars and occlusion remain limitations. No screen images or personal avatar references are uploaded by updates.
 
 Native UI tests create a hidden owned window and exercise real controls/production handlers for mode tabs, activation modes, sliders, decimal fields, capture-state start/stop, preview expansion, scrolling and mouse-button binding storage. They install no hooks, run no input thread and do not write user settings or control a game.
+
+1.2.1 keeps the sensitivity slider scoped to First Person. Third Person shows a free-cursor explanation instead; the camera-only slider is hidden there. Native tab tests verify this visibility together with the actual engine mode.

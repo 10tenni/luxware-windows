@@ -372,6 +372,8 @@ void layout() {
   place(HOLDMODE, 30, 307, 160);
   place(TOGGLEMODE, 200, 307, 160);
   place(MAINSENS, 30, 422, 330, 28);
+  if (!state.config().camera)
+    ShowWindow(GetDlgItem(ui.window, MAINSENS), SW_HIDE);
   place(MAINHZ, 30, 550, 330, 28);
   place(CLICKS, 30, 637, 174);
   place(BUTTON, 252, 637, 108, 130);
@@ -543,11 +545,15 @@ void paint(HWND window, HDC dc) {
   DeleteObject(dark);
   text(dc, 42, 212 - ui.scroll, bindingName(s), RGB(235, 235, 240), ui.mono);
   card(264, 86, L"Mode");
-  card(364, 118, L"Sensitivity");
-  text(dc, 310, 376 - ui.scroll, number(s.sensitivity, 2), red, ui.mono);
-  text(dc, 32, 456 - ui.scroll,
-       s.camera ? L"Adjust to match your in-game sensitivity." : L"Third person moves the free cursor.",
-       muted, ui.mono);
+  if (s.camera) {
+    card(364, 118, L"Sensitivity");
+    text(dc, 310, 376 - ui.scroll, number(s.sensitivity, 2), red, ui.mono);
+    text(dc, 32, 456 - ui.scroll, L"Adjust to match your in-game sensitivity.", muted, ui.mono);
+  } else {
+    card(364, 118, L"Third person");
+    text(dc, 32, 408 - ui.scroll, L"Moves the free cursor onto the player.", muted, ui.mono);
+    text(dc, 32, 438 - ui.scroll, L"No player: your mouse stays free.", muted, ui.mono);
+  }
   card(496, 118, L"Tracking frequency");
   text(dc, 286, 508 - ui.scroll, number(s.hz, 0) + L" Hz", red, ui.mono);
   text(dc, 32, 584 - ui.scroll, L"Movement limit; detection FPS is shown below.", muted, ui.mono);
@@ -1031,6 +1037,7 @@ void command(int id, int notification) {
       state.settings = s;
     }
     save();
+    layout();
     RedrawWindow(ui.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
     return;
   }
@@ -1465,9 +1472,11 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   auto check = [&](const std::string &name, bool ok) { checks.push_back({name, ok}); };
   check("startsInCompactView", !ui.previewVisible);
   command(THIRDTAB, 0);
-  check("thirdPersonTabChangesEngineMode", !state.config().camera);
+  check("thirdPersonTabChangesEngineMode",
+        !state.config().camera && !(GetWindowLongPtrW(GetDlgItem(window, MAINSENS), GWL_STYLE) & WS_VISIBLE));
   command(FIRSTTAB, 0);
-  check("firstPersonTabChangesEngineMode", state.config().camera);
+  check("firstPersonTabChangesEngineMode",
+        state.config().camera && (GetWindowLongPtrW(GetDlgItem(window, MAINSENS), GWL_STYLE) & WS_VISIBLE));
   command(HOLDMODE, 0);
   check("holdButtonChangesActivationMode", state.config().hold);
   command(TOGGLEMODE, 0);
