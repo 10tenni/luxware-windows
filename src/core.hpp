@@ -92,6 +92,62 @@ inline std::vector<float> tensor(const Image &im) {
   return out;
 }
 
+// Same scaleFill bilinear sampling as tensor(), with reusable storage and cached coordinates.
+class Tensorizer {
+  struct Axis {
+    int low, high;
+    double fraction;
+  };
+  std::array<Axis, 640> xs{}, ys{};
+  int width = 0, height = 0;
+  std::vector<float> values = std::vector<float>(3 * 640 * 640);
+  static void axis(std::array<Axis, 640> &out, int size) {
+    for (int i = 0; i < 640; ++i) {
+      double p = std::clamp((i + .5) * size / 640.0 - .5, 0., double(size - 1));
+      int low = int(p);
+      out[i] = {low, std::min(low + 1, size - 1), p - low};
+    }
+  }
+
+public:
+  std::vector<float> &prepare(const Image &im) {
+    if (!im.valid())
+      throw std::runtime_error("Invalid input image");
+    if (width != im.w || height != im.h) {
+      axis(xs, im.w);
+      axis(ys, im.h);
+      width = im.w;
+      height = im.h;
+    }
+    constexpr size_t plane = 640 * 640;
+    for (int y = 0; y < 640; ++y) {
+      auto a = im.bgra.data() + size_t(ys[y].low) * im.w * 4;
+      auto b = im.bgra.data() + size_t(ys[y].high) * im.w * 4;
+      double fy = ys[y].fraction;
+      for (int x = 0; x < 640; ++x) {
+        int lo = xs[x].low * 4, hi = xs[x].high * 4;
+        double fx = xs[x].fraction;
+        size_t pos = size_t(y) * 640 + x;
+        for (int c = 0; c < 3; ++c) {
+          int ch = 2 - c;
+          double top = a[lo + ch] * (1 - fx) + a[hi + ch] * fx;
+          double bottom = b[lo + ch] * (1 - fx) + b[hi + ch] * fx;
+          values[c * plane + pos] = float((top * (1 - fy) + bottom * fy) / 255.);
+        }
+      }
+    }
+    return values;
+  }
+};
+
+inline double analysisDelay(double workSeconds, double requestedFPS, bool cpu, bool gameFriendly) {
+  double cap = std::clamp(requestedFPS, 5., 240.);
+  if (gameFriendly)
+    cap = std::min(cap, cpu ? 30. : 60.);
+  // No frame queue/catch-up. Allow idle time even when one inference exceeds the cap interval.
+  return std::max(std::max(0., 1 / cap - workSeconds), gameFriendly ? workSeconds * .25 : 0.);
+}
+
 // Appearance is computed from current image pixels, not game state/coordinates.
 using Feature = std::array<float, 76>;
 inline Feature describe(const Image &im, Rect box) {

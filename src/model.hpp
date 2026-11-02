@@ -12,6 +12,7 @@ class Model {
   std::unique_ptr<Ort::Env> env;
   std::unique_ptr<Ort::Session> session;
   std::string inputName, outputName;
+  Tensorizer preprocessor;
 
 public:
   std::string provider = "Not loaded";
@@ -46,6 +47,9 @@ public:
       Ort::SessionOptions o;
       o.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
       o.SetIntraOpNumThreads(std::max(1, std::min(4, int(std::thread::hardware_concurrency() / 2))));
+      o.SetInterOpNumThreads(1);
+      o.AddConfigEntry("session.intra_op.allow_spinning", "0");
+      o.AddConfigEntry("session.inter_op.allow_spinning", "0");
       o.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
       return o;
     };
@@ -95,7 +99,7 @@ public:
   std::vector<Detection> run(const Image &image, double confidence) {
     if (!session)
       throw std::runtime_error("Model not loaded");
-    auto input = tensor(image);
+    auto &input = preprocessor.prepare(image);
     std::array<int64_t, 4> dims{1, 3, 640, 640};
     auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     auto value =

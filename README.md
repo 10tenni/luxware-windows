@@ -1,4 +1,4 @@
-# Luxware for Windows 1.1 (x64)
+# Luxware for Windows 1.1.1 (x64)
 
 This is a compiled native Windows application, using the same genuinely trained player weights as the Mac app. It is a C++/Win32 port with actual DXGI Desktop Duplication/GDI screen capture, ONNX Runtime inference and standard Windows SendInput. It is not a renamed Mac bundle, an aim trainer, a video playback system or invented detection boxes. No Python installation, API key, cloud upload or account is needed to run the packaged executable. The updater uses the built-in Windows PowerShell 5.1 and contacts GitHub for releases.
 
@@ -55,3 +55,13 @@ The feed is HTTPS, limited to this repository. Download length and SHA-256 must 
 Update status and errors appear in Settings. Networking uses a separate local PowerShell process with time/size limits, no profile and a process-only execution-policy override for the shipped updater script; no system policy is changed. Offline checks fail without blocking capture/input. No gameplay images are uploaded.
 
 1.1 also avoids duplicate running input engines, keeps action/error messages visible for eight seconds, and stages just the client rectangle during DXGI readback rather than copying the full monitor. This reduces copied pixels for smaller windows; native capture performance has not been benchmarked. Detector weights and their accuracy limitations are unchanged.
+
+## 1.1.1 performance changes
+
+Game-friendly processing is enabled by default, including for existing settings files. It caps analysis at the lower of your requested rate and 60 FPS on DirectML or 30 FPS on CPU, and reserves an idle gap of at least 25% of each analysis duration. It never queues old frames. Turn it off in Settings to use your original analysis-rate limit. Actual achieved detection FPS is still measured. Click CPS and the movement-rate setting are independent of this analysis budget.
+
+Bilinear RGB preprocessing reuses its 4.7 MiB tensor and caches resize coordinates. Regression checks compare it with the original scalar preprocessing, including single-pixel, odd-sized and larger images. The model weights, 640-pixel input, confidence and detector format are unchanged. ONNX Runtime thread-pool spinning is explicitly disabled to reduce idle CPU competition; see the [official threading documentation](https://onnxruntime.ai/docs/performance/tune-performance/threading.html).
+
+The UI reuses its drawing buffer. Background preview updates are limited to 5 FPS, while foreground controls/preview update up to 20 FPS; this preview limit is separate from real detection FPS. Minimized redraws are skipped. The 20 Hz input-safety heartbeat remains independent. Idle input polling is reduced to 100 Hz and the active timer is one-shot rather than continuously periodic.
+
+Native test reports include a generated-image preprocessing microbenchmark, maximum pixel error, and resource-reuse checks. Those measurements are not Roblox gameplay FPS or a guarantee of performance on a particular PC.

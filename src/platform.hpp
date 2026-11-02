@@ -108,9 +108,54 @@ template <class T> struct Com {
     return p != nullptr;
   }
 };
+class PaintBuffer {
+  HDC dc = nullptr;
+  HBITMAP bitmap = nullptr;
+  HGDIOBJ original = nullptr;
+  int width = 0, height = 0;
+
+public:
+  PaintBuffer() = default;
+  PaintBuffer(const PaintBuffer &) = delete;
+  PaintBuffer &operator=(const PaintBuffer &) = delete;
+  ~PaintBuffer() {
+    reset();
+  }
+  void reset() {
+    if (dc && original)
+      SelectObject(dc, original);
+    if (bitmap)
+      DeleteObject(bitmap);
+    if (dc)
+      DeleteDC(dc);
+    dc = nullptr;
+    bitmap = nullptr;
+    original = nullptr;
+    width = height = 0;
+  }
+  HDC get(HDC target, int w, int h) {
+    w = std::max(1, w);
+    h = std::max(1, h);
+    if (dc && width == w && height == h)
+      return dc;
+    reset();
+    dc = CreateCompatibleDC(target);
+    if (!dc)
+      return nullptr;
+    bitmap = CreateCompatibleBitmap(target, w, h);
+    if (!bitmap) {
+      reset();
+      return nullptr;
+    }
+    original = SelectObject(dc, bitmap);
+    width = w;
+    height = h;
+    return dc;
+  }
+};
 struct Settings {
   bool camera = true, hold = false, aim = true, clicks = true, right = false, single = false, level = true,
-       gpu = true;
+       gpu = true, gameFriendly = true;
   double cps = 23.43, duty = .4, strength = 1, smoothing = 0, sensitivity = 1, fov = .5, confidence = .4,
          prediction = 0, fps = 120, hz = 240;
   int bindKind = 0, bindCode = VK_F6, bindMods = 0;
@@ -142,6 +187,7 @@ inline Settings loadSettings() {
   s.single = num(L"single", 0) != 0;
   s.level = num(L"level", 1) != 0;
   s.gpu = num(L"gpu", 1) != 0;
+  s.gameFriendly = num(L"gameFriendly", 1) != 0;
   s.cps = std::clamp(num(L"cps", 23.43), .1, 200.);
   s.duty = std::clamp(num(L"duty", .4), .01, .99);
   s.strength = std::clamp(num(L"strength", 1), 0., 1.);
@@ -180,6 +226,7 @@ inline void saveSettings(const Settings &s) {
   put(L"single", s.single);
   put(L"level", s.level);
   put(L"gpu", s.gpu);
+  put(L"gameFriendly", s.gameFriendly);
   put(L"cps", s.cps);
   put(L"duty", s.duty);
   put(L"strength", s.strength);

@@ -31,6 +31,7 @@ enum {
   UPDATES,
   CHECKUPDATE,
   AUTOUPDATE,
+  GAMEFRIENDLY,
   SLIDER = 300
 };
 constexpr UINT APP_BIND = WM_APP + 1, APP_SAVE = WM_APP + 2;
@@ -41,6 +42,8 @@ struct UI {
        button = nullptr, cps = nullptr, duty = nullptr;
   HFONT font = nullptr, big = nullptr, mono = nullptr;
   HBRUSH background = nullptr, editBrush = nullptr;
+  PaintBuffer canvas;
+  double nextVisual = 0;
   std::vector<HWND> controls, sliders;
   std::vector<HWND> windows;
   RECT preview{};
@@ -609,10 +612,11 @@ void drawButton(DRAWITEMSTRUCT *d) {
   }
   auto s = state.config();
   bool checkbox = d->CtlID == AIM || d->CtlID == SINGLE || d->CtlID == LEVEL || d->CtlID == CLICKS ||
-                  d->CtlID == GPU || d->CtlID == AUTOUPDATE;
+                  d->CtlID == GPU || d->CtlID == AUTOUPDATE || d->CtlID == GAMEFRIENDLY;
   bool checked = (d->CtlID == AIM && s.aim) || (d->CtlID == SINGLE && s.single) ||
                  (d->CtlID == LEVEL && s.level) || (d->CtlID == CLICKS && s.clicks) ||
-                 (d->CtlID == GPU && s.gpu) || (d->CtlID == AUTOUPDATE && updates.automatic);
+                 (d->CtlID == GPU && s.gpu) || (d->CtlID == AUTOUPDATE && updates.automatic) ||
+                 (d->CtlID == GAMEFRIENDLY && s.gameFriendly);
   RECT r = d->rcItem;
   bool primary = d->CtlID == SCAN || d->CtlID == ARM;
   COLORREF color = primary ? RGB(0, 115, 245) : RGB(32, 38, 49);
@@ -673,13 +677,14 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     }
     MoveWindow(button(L"GPU (DirectML)", GPU, w), 20, 378, 190, 30, TRUE);
     MoveWindow(button(L"Use bundled model", BUNDLED, w), 240, 378, 200, 30, TRUE);
-    HWND info = control(L"STATIC",
-                        L"Requested rates are limits; actual performance appears below the preview.\nLevel "
-                        L"return reverses recorded mouse Y, not a measured game camera angle.\nLook level "
-                        L"before activation or Ctrl+Shift+L. Manual motion cancels return.\nPlayer detection "
-                        L"and appearance matching can miss or confuse outfits.",
-                        780, 0, w);
-    MoveWindow(info, 20, 425, 500, 95, TRUE);
+    MoveWindow(button(L"Game-friendly: 60 FPS GPU / 30 FPS CPU", GAMEFRIENDLY, w), 20, 414, 500, 30, TRUE);
+    HWND info =
+        control(L"STATIC",
+                L"Actual rates appear below the preview. Game-friendly processing yields time to the game.\n"
+                L"Level return estimates mouse Y, not camera angle. Manual motion cancels it.\n"
+                L"Player recognition and self exclusion can still make mistakes.",
+                780, 0, w);
+    MoveWindow(info, 20, 453, 500, 65, TRUE);
     MoveWindow(button(L"Check for updates", CHECKUPDATE, w), 20, 530, 210, 32, TRUE);
     MoveWindow(button(L"Automatic updates", AUTOUPDATE, w), 245, 530, 275, 32, TRUE);
     HWND updateText = control(L"STATIC", updates.message.c_str(), 790, 0, w);
@@ -721,6 +726,15 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
         }
       } else
         updates.start();
+      return 0;
+    }
+    if (id == GAMEFRIENDLY) {
+      {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.settings.gameFriendly = !state.settings.gameFriendly;
+      }
+      save();
+      InvalidateRect(w, nullptr, FALSE);
       return 0;
     }
     if (id == AUTOUPDATE) {
@@ -1070,6 +1084,11 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     return 0;
   case WM_TIMER: {
     state.heartbeat = now();
+    // Keep the input safety heartbeat at 20 Hz, while limiting background preview work.
+    if (now() < ui.nextVisual)
+      return 0;
+    HWND foreground = GetForegroundWindow();
+    ui.nextVisual = now() + ((foreground == w || foreground == ui.settings) ? .05 : .2);
     if (!ui.testing) {
       if (ui.updateAfter > 0 && now() >= ui.updateAfter) {
         ui.updateAfter = 0;
@@ -1105,7 +1124,8 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     EnableWindow(ui.source, !state.scan);
     ShowWindow(GetDlgItem(w, LEVEL), s.camera ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(w, SETLEVEL), s.camera ? SW_SHOW : SW_HIDE);
-    InvalidateRect(w, nullptr, FALSE);
+    if (!IsIconic(w))
+      InvalidateRect(w, nullptr, FALSE);
     return 0;
   }
   case WM_INPUT: {
@@ -1214,14 +1234,11 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     HDC dc = BeginPaint(w, &ps);
     RECT r;
     GetClientRect(w, &r);
-    HDC memory = CreateCompatibleDC(dc);
-    HBITMAP bitmap = CreateCompatibleBitmap(dc, std::max(1L, r.right), std::max(1L, r.bottom));
-    auto old = SelectObject(memory, bitmap);
-    paint(w, memory);
-    BitBlt(dc, 0, 0, r.right, r.bottom, memory, 0, 0, SRCCOPY);
-    SelectObject(memory, old);
-    DeleteObject(bitmap);
-    DeleteDC(memory);
+    if (HDC memory = ui.canvas.get(dc, r.right, r.bottom)) {
+      paint(w, memory);
+      BitBlt(dc, 0, 0, r.right, r.bottom, memory, 0, 0, SRCCOPY);
+    } else
+      paint(w, dc);
     EndPaint(w, &ps);
     return 0;
   }
@@ -1230,6 +1247,7 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     DestroyWindow(w);
     return 0;
   case WM_DESTROY:
+    ui.canvas.reset();
     state.quit = true;
     KillTimer(w, 1);
     if (ui.keyboardHook)

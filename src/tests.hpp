@@ -12,8 +12,67 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
         timeEndPeriod(1);
     }
   } resolution; // Match the production loop's requested scheduler resolution.
-  double clockInterval = 0, clockHold = 0;
+  double clockInterval = 0, clockHold = 0, referenceMS = 0, optimizedMS = 0, maxPixelError = 0,
+         pixelChecksum = 0;
   try {
+    Tensorizer reusable;
+    const float *storage = nullptr;
+    bool stable = true;
+    Image benchmark;
+    for (auto size : {std::pair<int, int>{1, 1}, {17, 13}, {640, 400}, {1600, 900}}) {
+      Image image;
+      image.w = size.first;
+      image.h = size.second;
+      image.bgra.resize(size_t(image.w) * image.h * 4);
+      for (size_t i = 0; i < image.bgra.size(); ++i)
+        image.bgra[i] = uint8_t((i * 37 + i / 17) % 256);
+      auto reference = tensor(image);
+      const auto &fast = reusable.prepare(image);
+      if (storage && storage != fast.data())
+        stable = false;
+      storage = fast.data();
+      for (size_t i = 0; i < fast.size(); ++i)
+        maxPixelError = std::max(maxPixelError, std::abs(double(fast[i]) - reference[i]));
+      benchmark = std::move(image);
+    }
+    check("reusedPreprocessingMatchesScalarPixels", maxPixelError < 1e-6);
+    check("preprocessingStorageStableAcrossResizes", stable);
+    constexpr int repetitions = 8;
+    double begin = now();
+    for (int i = 0; i < repetitions; ++i) {
+      auto v = tensor(benchmark);
+      pixelChecksum += v[size_t(i) * 997];
+    }
+    referenceMS = (now() - begin) * 1000 / repetitions;
+    begin = now();
+    for (int i = 0; i < repetitions; ++i) {
+      const auto &v = reusable.prepare(benchmark);
+      pixelChecksum += v[size_t(i) * 997];
+    }
+    optimizedMS = (now() - begin) * 1000 / repetitions;
+    check("processingBudgetLeavesIdleTime",
+          std::abs(analysisDelay(.04, 120, true, true) - .01) < 1e-9 &&
+              std::abs(analysisDelay(.005, 120, true, true) - (1. / 30 - .005)) < 1e-9 &&
+              std::abs(analysisDelay(.005, 120, false, true) - (1. / 60 - .005)) < 1e-9 &&
+              analysisDelay(.04, 120, false, false) == 0);
+    HDC screen = GetDC(nullptr);
+    bool reuseOK = false;
+    if (screen) {
+      DWORD before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+      {
+        PaintBuffer canvas;
+        auto first = canvas.get(screen, 320, 180);
+        auto bitmap = first ? GetCurrentObject(first, OBJ_BITMAP) : nullptr;
+        reuseOK =
+            first && first == canvas.get(screen, 320, 180) && bitmap == GetCurrentObject(first, OBJ_BITMAP);
+        for (int i = 0; i < 20; ++i)
+          reuseOK = canvas.get(screen, 320 + i, 180 + i) && reuseOK;
+      }
+      DWORD after = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+      check("paintBufferReusesStorageAndReleasesObjects", reuseOK && after <= before + 1);
+      ReleaseDC(nullptr, screen);
+    } else
+      check("paintBufferReusesStorageAndReleasesObjects", false);
     check("resetLevelStopBindingsReserved", reservedBinding(0, 'R', 3) && reservedBinding(0, 'L', 3) &&
                                                 reservedBinding(0, VK_ESCAPE, 5) &&
                                                 !reservedBinding(0, 'E', 2) && !reservedBinding(1, 3, 3));
@@ -236,7 +295,10 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
       out << ",";
     out << "\n\"" << checks[i].first << "\":" << (checks[i].second ? "true" : "false");
   }
-  out << "},\n\"clockIntervalMS\":" << clockInterval * 1000 << ",\n\"clockHoldMS\":" << clockHold * 1000
+  out << "},\n\"preprocessReferenceMS\":" << referenceMS << ",\n\"preprocessOptimizedMS\":" << optimizedMS
+      << ",\n\"preprocessMaximumPixelError\":" << maxPixelError
+      << ",\n\"preprocessChecksum\":" << pixelChecksum << ",\n\"clockIntervalMS\":" << clockInterval * 1000
+      << ",\n\"clockHoldMS\":" << clockHold * 1000
       << ",\n\"recordedImageChecksRun\":" << (recorded ? "true" : "false")
       << ",\n\"meanModelMS\":" << inferenceMS << ",\"sameBodyFeatureDistance\":" << poseDistance
       << ",\"otherBodyFeatureDistance\":" << otherDistance

@@ -144,7 +144,7 @@ inline void worker(Shared &shared) {
     Rates fps;
     unsigned reset = shared.reset.load(), reload = ~0u;
     bool previousSingle = false;
-    double lastAnalysis = 0;
+    double nextAnalysis = 0;
     while (!shared.quit) {
       Settings s = shared.config();
       unsigned wanted = shared.reload.load();
@@ -175,12 +175,10 @@ inline void worker(Shared &shared) {
       }
       HWND source = shared.source.load();
       double started = now();
-      if (!shared.scan || !source || !front(source) ||
-          started - lastAnalysis < 1 / std::clamp(s.fps, 5., 240.)) {
+      if (!shared.scan || !source || !front(source) || started < nextAnalysis) {
         std::this_thread::sleep_for(std::chrono::milliseconds(3));
         continue;
       }
-      lastAnalysis = started;
       try {
         Rect client = clientRect(source);
         auto image = capture.grab(source, client);
@@ -231,6 +229,8 @@ inline void worker(Shared &shared) {
           note = "Clicker only: real screen capture active; detection and aiming paused";
         fps.add(received);
         double finished = now();
+        nextAnalysis = finished + analysisDelay(finished - started, s.fps,
+                                                s.aim && model.provider.find("CPU") == 0, s.gameFriendly);
         if (shared.reset.load() != reset || shared.source.load() != source || !shared.scan ||
             shared.reload.load() != reload)
           continue;
@@ -304,7 +304,7 @@ inline void inputLoop(
   if (waitable) {
     LARGE_INTEGER due;
     due.QuadPart = -10000;
-    if (!SetWaitableTimer(waitable, &due, 1, nullptr, nullptr, FALSE)) {
+    if (!SetWaitableTimer(waitable, &due, 0, nullptr, nullptr, FALSE)) {
       CloseHandle(waitable);
       waitable = nullptr;
     }
@@ -447,9 +447,16 @@ inline void inputLoop(
                                               : "Look level, then Ctrl+Shift+L";
       lastRates = t;
     }
-    if (waitable)
-      WaitForSingleObject(waitable, 5);
-    else
+    if (!shared.armed || !shared.scan)
+      Sleep(10);
+    else if (waitable) {
+      LARGE_INTEGER due;
+      due.QuadPart = -10000;
+      if (SetWaitableTimer(waitable, &due, 0, nullptr, nullptr, FALSE))
+        WaitForSingleObject(waitable, 5);
+      else
+        Sleep(1);
+    } else
       Sleep(1);
   }
   for (int i = 0; osHeld && i < 10; i++) {
