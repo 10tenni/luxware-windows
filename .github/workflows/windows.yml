@@ -49,3 +49,12 @@ jobs:
           if ('${{ github.ref_name }}' -ne "v$version") { throw 'Tag must match release.json' }
           gh release create "v$version" "dist/Luxware-$version-Windows-x64.zip" dist/latest.json --title "Luxware $version for Windows" --generate-notes --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+      - name: Verify published update feed and complete download
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          $state = Join-Path $env:RUNNER_TEMP 'luxware-published-update-check'
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./Updates/Update.ps1 -Mode Check -StateDirectory $state -CurrentVersion 1.0.0 -InstallDirectory ./build-windows/Release
+          if ($LASTEXITCODE -ne 0) { Get-Content "$state/status.ini"; throw 'Published update check failed' }
+          if ((Get-Content "$state/status.ini" -Raw) -notmatch 'State=Ready') { throw 'Published package was not ready' }
+          Get-Content "$state/status.ini"
