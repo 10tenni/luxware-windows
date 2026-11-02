@@ -65,7 +65,7 @@ try {
     Check 'unrelatedInstallFilesPreserved' { if ((Get-Content (Join-Path $target 'unrelated.txt') -Raw) -ne 'keep unrelated file') { throw 'Unrelated file changed' } }
     Check 'settingsPreserved' { if ((Get-Content $userData -Raw) -ne 'user settings remain') { throw 'User data changed' } }
     Check 'repeatInstallRejected' { Must-Fail { Install-Payload $extracted $target '1.2.0' } }
-    $reportObject=@{passed=$true;checks=$results;host=$PSVersionTable.OS;scope='Updater manifest, checksum, ZIP validation, filesystem replacement and forced rollback on temporary fixtures; no live app replaced.'}
+    $reportObject=@{passed=$true;checks=$results;host=[Environment]::OSVersion.VersionString;scope='Updater manifest, checksum, ZIP validation, filesystem replacement and forced rollback on temporary fixtures; no live app replaced.'}
     if ($Report) { $reportObject|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $Report -Encoding UTF8 }
     Write-Output ('Passed '+$results.Count+' updater checks')
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
