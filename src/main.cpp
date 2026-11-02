@@ -643,9 +643,10 @@ void paint(HWND window, HDC dc) {
                        L"%";
   text(dc, 22, h - 49, stats, RGB(190, 190, 202), ui.mono);
   std::string note =
-      !inputError.empty()       ? inputError
-      : !error.empty()          ? error
-      : now() < ui.messageUntil ? ui.message
+      !inputError.empty()            ? inputError
+      : !error.empty()               ? error
+      : now() < ui.messageUntil      ? ui.message
+      : state.armed && s.aim && !own ? "Clicker only: mark your own avatar to enable aiming"
       : state.armed && !inputEngaged
           ? (s.hold && !state.bindingHeld ? "Hold the activation binding"
              : !front(state.source)       ? "Paused: focus the selected game window"

@@ -244,6 +244,26 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
     check("staleObservationCannotMoveMouse", staleCannotMove);
     check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
+    auto migrationFile = std::filesystem::temp_directory_path() /
+                         (L"luxware-snap-test-" + std::to_wstring(GetCurrentProcessId()) + L".ini");
+    {
+      std::ofstream settings(migrationFile);
+      settings << "[Luxware]\nsmoothing=0.9\nstrength=0.25\nhz=30\ncps=17.25\nduty=0.73\n";
+    }
+    auto migrated = loadSettings(migrationFile);
+    check("legacySettingsMigrateToDirectSnapPreset",
+          migrated.snap && migrated.strength == 1 && migrated.smoothing == 0 && migrated.hz == 1000);
+    check("snapMigrationPreservesCpsAndDuty",
+          std::abs(migrated.cps - 17.25) < 1e-9 && std::abs(migrated.duty - .73) < 1e-9);
+    migrated.snap = false;
+    migrated.smoothing = .75;
+    migrated.strength = .25;
+    migrated.hz = 180;
+    saveSettings(migrated, migrationFile);
+    auto optedOut = loadSettings(migrationFile);
+    check("explicitSmoothPreferenceSurvivesReload",
+          !optedOut.snap && optedOut.smoothing == .75 && optedOut.strength == .25 && optedOut.hz == 180);
+    std::filesystem::remove(migrationFile);
     // Real dispatch path with a fixed producer frame: Snap must not tween/reapply that frame.
     Shared snapState;
     snapState.scan = snapState.armed = true;
@@ -256,12 +276,16 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     snapState.view.client = {0, 0, 1000, 800};
     snapState.view.received = now();
     snapState.view.target = Detection{{.8, .7, .1, .1}, .9f, 1, false, {}};
-    std::atomic<int> snapMoves{0}, firstX{0}, firstY{0};
+    std::atomic<int> snapMoves{0}, firstX{0}, firstY{0}, absoluteX{-1}, absoluteY{-1};
     std::thread snapThread([&] {
       inputLoop(
           snapState,
           [&](INPUT &input) {
             if (input.mi.dwFlags & MOUSEEVENTF_MOVE) {
+              if (input.mi.dwFlags & MOUSEEVENTF_ABSOLUTE) {
+                absoluteX = input.mi.dx;
+                absoluteY = input.mi.dy;
+              }
               if (snapMoves.fetch_add(1) == 0) {
                 firstX = input.mi.dx;
                 firstY = input.mi.dy;
@@ -294,6 +318,21 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     }
     snapPump(.10);
     bool stopsOnLoss = snapMoves == 2;
+    {
+      std::lock_guard<std::mutex> lock(snapState.mutex);
+      snapState.settings.camera = false;
+      snapState.view.received = now();
+      snapState.view.target = Detection{{.8, .7, .1, .1}, .9f, 1, false, {}};
+    }
+    snapPump(.08);
+    double decodedX =
+        double(absoluteX.load()) * std::max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1) / 65535. +
+        GetSystemMetrics(SM_XVIRTUALSCREEN);
+    double decodedY =
+        double(absoluteY.load()) * std::max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1) / 65535. +
+        GetSystemMetrics(SM_YVIRTUALSCREEN);
+    bool directPointer =
+        snapMoves == 3 && absoluteX >= 0 && std::abs(decodedX - 850) < 1 && std::abs(decodedY - 600) < 1;
     snapState.armed = false;
     snapPump(.02);
     snapState.quit = true;
@@ -301,6 +340,7 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("snapUsesOneDirectCorrectionWithoutSmoothing", directSnap);
     check("snapWaitsForNewFrameBeforeNextCorrection", followsNewFrame);
     check("snapStillStopsMovementWhenPlayerDisappears", stopsOnLoss);
+    check("snapFreeCursorGoesDirectlyToObservedPoint", directPointer);
     auto primeLock = [](Tracker &tracker) {
       Feature f{};
       Detection body{{.8, .4, .1, .2}, .9f, 0, false, f};

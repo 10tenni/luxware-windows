@@ -165,9 +165,9 @@ struct Settings {
 inline bool reservedBinding(int kind, int code, int mods) {
   return kind == 0 && (((mods & 3) == 3 && code == 'R') || ((mods & 5) == 5 && code == VK_ESCAPE));
 }
-inline Settings loadSettings() {
+inline Settings loadSettings(const std::filesystem::path &settingsFile = {}) {
   Settings s;
-  auto file = (dataFolder() / L"settings.ini").wstring();
+  auto file = (settingsFile.empty() ? dataFolder() / L"settings.ini" : settingsFile).wstring();
   auto num = [&](const wchar_t *key, double value) {
     wchar_t b[100]{};
     GetPrivateProfileStringW(L"Luxware", key, std::to_wstring(value).c_str(), b, 100, file.c_str());
@@ -221,8 +221,8 @@ inline Settings loadSettings() {
   s.modelPath = model;
   return s;
 }
-inline void saveSettings(const Settings &s) {
-  auto file = (dataFolder() / L"settings.ini").wstring();
+inline void saveSettings(const Settings &s, const std::filesystem::path &settingsFile = {}) {
+  auto file = (settingsFile.empty() ? dataFolder() / L"settings.ini" : settingsFile).wstring();
   auto put = [&](const wchar_t *k, double v) {
     WritePrivateProfileStringW(L"Luxware", k, std::to_wstring(v).c_str(), file.c_str());
   };

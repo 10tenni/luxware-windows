@@ -57,3 +57,5 @@ The final delay model runs serial capture/inference rather than queueing paralle
 ## 1.2.3 Snap and reappearance
 
 Production input-loop tests with an injected sink verify a direct 350/200-unit correction despite a configured smoothing value, exactly one movement per producer frame, a new correction for the next frame, and stopping at detection loss. These use explicit controlled observations and never send events to the OS. Tracker tests verify confirmed reacquisition at the opposite viewport edge, pause on equal lookalikes and no silent takeover after identity expiry. Hidden UI tests verify Snap default, disable and response-preset controls. These are not live PvP validation or evidence of 1 ms vision latency.
+
+Migration checks use a dedicated temporary INI file (not user settings) to verify the Snap response migration, unchanged CPS/duty and explicit smooth-mode opt-out persistence. An additional injected-dispatch check decodes the free-cursor absolute event and verifies the expected target point directly, without moving the real cursor.
