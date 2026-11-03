@@ -157,7 +157,7 @@ struct Settings {
   bool camera = true, hold = false, aim = true, clicks = true, right = false, single = false, level = true,
        gpu = true, gameFriendly = true, snap = true;
   double cps = 23.43, duty = .4, strength = 1, smoothing = 0, sensitivity = 1, fov = .5, confidence = .4,
-         prediction = 0, fps = 120, hz = 1000;
+         prediction = 0, fps = 120, hz = 1000, crossCPS = 23.43;
   int bindKind = 0, bindCode = VK_F6, bindMods = 0;
   int avatarNext = 0;
   int crossMode = 0, crossSlot = 0, returnSlot = 0, crossTrigger = VK_F7, crossTriggerKind = 0;
@@ -182,7 +182,8 @@ inline Settings managedPreset(const Settings &saved) {
   s.gpu = true;
   s.gameFriendly = true;
   s.snap = true;
-  s.cps = 23.43;
+  s.cps = std::isfinite(saved.cps) ? std::clamp(saved.cps, .1, 200.) : 23.43;
+  s.crossCPS = std::isfinite(saved.crossCPS) ? std::clamp(saved.crossCPS, .1, 200.) : 23.43;
   s.duty = .4;
   s.strength = 1;
   s.smoothing = 0;
@@ -192,9 +193,9 @@ inline Settings managedPreset(const Settings &saved) {
   s.prediction = .001;
   s.fps = 120;
   s.hz = 1000;
-  s.bindKind = 0;
-  s.bindCode = VK_F6;
-  s.bindMods = 0;
+  s.bindKind = saved.bindKind;
+  s.bindCode = saved.bindCode;
+  s.bindMods = saved.bindMods;
   s.modelPath.clear();
   return s;
 }
@@ -233,6 +234,7 @@ inline Settings loadSettings(const std::filesystem::path &settingsFile = {}) {
   bool migrateSnap = !savedSnap[0];
   s.snap = num(L"snap", 1) != 0;
   s.cps = std::clamp(num(L"cps", 23.43), .1, 200.);
+  s.crossCPS = std::clamp(num(L"crossCPS", 23.43), .1, 200.);
   s.duty = std::clamp(num(L"duty", .4), .01, .99);
   s.strength = std::clamp(num(L"strength", 1), 0., 1.);
   s.smoothing = std::clamp(num(L"smoothing", 0), 0., .95);
@@ -283,6 +285,7 @@ inline void saveSettings(const Settings &s, const std::filesystem::path &setting
   put(L"gameFriendly", s.gameFriendly);
   put(L"snap", s.snap);
   put(L"cps", s.cps);
+  put(L"crossCPS", s.crossCPS);
   put(L"duty", s.duty);
   put(L"strength", s.strength);
   put(L"smoothing", s.smoothing);

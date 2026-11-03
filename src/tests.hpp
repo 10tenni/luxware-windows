@@ -52,11 +52,13 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     Shared bow;
     bow.fixedPreset = true;
     bow.settings = cb;
+    bow.settings.crossCPS = 10;
     bow.scan = bow.armed = true;
     bow.source = reinterpret_cast<HWND>(1);
     bow.view.client = {0, 0, 1000, 800};
     std::mutex bowEventsMutex;
     std::vector<int> bowEvents;
+    std::vector<double> bowTimes;
     std::atomic<bool> bowFocus{true};
     bool rejectedBowRelease = false, taggedBowKeys = true;
     std::thread bowThread([&] {
@@ -71,12 +73,15 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
                 return UINT(0);
               }
             }
+            size_t before = bowEvents.size();
             if (in.type == INPUT_KEYBOARD)
               bowEvents.push_back((in.ki.dwFlags & KEYEVENTF_KEYUP) ? -int(in.ki.wVk) : int(in.ki.wVk));
             else if (in.mi.dwFlags & MOUSEEVENTF_LEFTDOWN)
               bowEvents.push_back(1000);
             else if (in.mi.dwFlags & MOUSEEVENTF_LEFTUP)
               bowEvents.push_back(-1000);
+            if (bowEvents.size() != before)
+              bowTimes.push_back(now());
             return UINT(1);
           },
           [&](HWND) { return bowFocus.load(); }, [] { return POINT{500, 400}; });
@@ -103,7 +108,7 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
       clickOnly = std::count(bowEvents.begin(), bowEvents.end(), 1000) > 5 &&
                   std::count(bowEvents.begin(), bowEvents.end(), '3') == 0;
     }
-    bowPump(1.23, true);
+    bowPump(1.40, true);
     bowFocus = false;
     bowPump(.05, true);
     size_t afterPause;
@@ -114,12 +119,17 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     bowPump(.08, true);
     bow.quit = true;
     bowThread.join();
-    bool ordered = false, paused = false, balanced = false;
+    bool ordered = false, paused = false, balanced = false, customHold = false;
     {
       std::lock_guard<std::mutex> lock(bowEventsMutex);
       auto e = std::find(bowEvents.begin(), bowEvents.end(), '3');
       if (e != bowEvents.end() && std::distance(e, bowEvents.end()) >= 6)
         ordered = e[1] == -'3' && e[2] == 1000 && e[3] == -1000 && e[4] == '1' && e[5] == -'1';
+      if (e != bowEvents.end() && std::distance(e, bowEvents.end()) >= 6) {
+        size_t pos = size_t(e - bowEvents.begin());
+        double holdSeconds = bowTimes[pos + 3] - bowTimes[pos + 2];
+        customHold = ordered && holdSeconds >= .035 && holdSeconds < .12;
+      }
       paused = afterPause == bowEvents.size();
       balanced = std::count(bowEvents.begin(), bowEvents.end(), 1000) ==
                      std::count(bowEvents.begin(), bowEvents.end(), -1000) &&
@@ -128,10 +138,35 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     }
     check("crossbowAutomaticNoPlayerLeavesRegularClicker", clickOnly);
     check("crossbowProductionEquipFireReturnOrder", ordered);
+    check("crossbowProductionUsesCustomPulseCps", customHold);
     check("crossbowProductionFocusLossStopsEvents", paused);
     check("crossbowProductionBalancedReleases", balanced);
     check("crossbowRetriesRejectedKeyRelease", rejectedBowRelease && ordered && balanced);
     check("crossbowGeneratedKeysAreTagged", taggedBowKeys && ordered);
+    Settings edited;
+    edited.cps = 31.75;
+    edited.crossCPS = 12.5;
+    edited.bindCode = VK_F8;
+    auto editedPreset = managedPreset(edited);
+    check("managedPresetPreservesCpsAndToggle", editedPreset.cps == 31.75 && editedPreset.crossCPS == 12.5 &&
+                                                    editedPreset.bindCode == VK_F8 && !editedPreset.hold);
+    auto cpsFile = std::filesystem::temp_directory_path() / L"Luxware-independent-cps.ini";
+    saveSettings(edited, cpsFile);
+    auto loadedCps = managedPreset(loadSettings(cpsFile));
+    check("independentCpsAndTogglePersist",
+          loadedCps.cps == 31.75 && loadedCps.crossCPS == 12.5 && loadedCps.bindCode == VK_F8);
+    std::filesystem::remove(cpsFile);
+    CrossbowCycle customPulse;
+    customPulse.poll(10, true);
+    customPulse.poll(11.11, true);
+    customPulse.accepted(11.11, 5);
+    customPulse.poll(11.14, true);
+    customPulse.accepted(11.14, 5);
+    check("crossbowCustomCpsControlsDownTiming", customPulse.poll(11.219, true) == CrossbowCycle::none &&
+                                                     customPulse.poll(11.221, true) == CrossbowCycle::fireUp);
+    customPulse.accepted(11.221, 5);
+    check("crossbowCustomCpsControlsUpTiming", customPulse.poll(11.340, true) == CrossbowCycle::none &&
+                                                   customPulse.poll(11.342, true) == CrossbowCycle::restore);
     Tensorizer reusable;
     const float *storage = nullptr;
     bool stable = true;
@@ -373,14 +408,14 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     oldTuning.modelPath = L"not-the-bundled-model.onnx";
     auto fixed = managedPreset(oldTuning);
     check("managedPresetIgnoresOldTuning", fixed.snap && fixed.clicks && !fixed.hold && fixed.single &&
-                                               fixed.cps == 23.43 && fixed.duty == .4 &&
-                                               fixed.sensitivity == 1 && fixed.confidence == .4 &&
-                                               fixed.modelPath.empty());
+                                               fixed.cps == 3 && fixed.duty == .4 && fixed.sensitivity == 1 &&
+                                               fixed.confidence == .4 && fixed.modelPath.empty());
     check("managedPresetPreservesNecessarySetup",
           !fixed.camera && fixed.avatarNext == 4 && fixed.bindCode == VK_F6);
     Shared managedState;
     managedState.fixedPreset = true;
     managedState.settings = oldTuning;
+    managedState.settings.cps = 23.43;
     managedState.armed = managedState.scan = true;
     managedState.source = reinterpret_cast<HWND>(1);
     std::atomic<int> managedDown{0}, managedUp{0}, managedMoves{0};

@@ -46,6 +46,7 @@ enum {
   RETURNSLOT,
   CROSSTRIGGER,
   CROSSDONE,
+  CROSSCPS,
   SLIDER = 300
 };
 constexpr UINT APP_BIND = WM_APP + 1, APP_SAVE = WM_APP + 2;
@@ -158,7 +159,7 @@ void crossLabels() {
   SetWindowTextW(GetDlgItem(ui.crossbow, 795),
                  ui.crossRecording ? L"Press one key (Esc cancels). Toggle also accepts Mouse 3/4/5."
                  : crossConfigured(s)
-                     ? L"Ready. F6 input must be active. Initial wait and repeat delay: 1.10 s."
+                     ? L"Ready. Main input toggle must be active. Initial wait and repeat delay: 1.10 s."
                      : L"Record distinct crossbow and return slot keys, then choose a mode.");
   SendMessageW(GetDlgItem(ui.crossbow, CROSSMODE), CB_SETCURSEL, s.crossMode, 0);
 }
@@ -182,6 +183,10 @@ void recordCross(int kind, int code) {
   else {
     s.crossTrigger = code;
     s.crossTriggerKind = kind;
+  }
+  if (crossBindingConflict(s)) {
+    SetWindowTextW(GetDlgItem(ui.crossbow, 795), L"Binding conflicts with main toggle. Choose another.");
+    return;
   }
   {
     std::lock_guard<std::mutex> l(state.mutex);
@@ -209,18 +214,43 @@ LRESULT CALLBACK crossWindow(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     child(L"BUTTON", L"", CROSSSLOT, 20, 108, 215, 32);
     child(L"BUTTON", L"", RETURNSLOT, 245, 108, 215, 32);
     child(L"BUTTON", L"", CROSSTRIGGER, 20, 154, 440, 32);
-    child(L"STATIC", L"", 795, 20, 202, 440, 55);
+    child(L"STATIC", L"Crossbow pulse CPS", 794, 20, 198, 190, 24);
+    child(L"EDIT", number(state.config().crossCPS).c_str(), CROSSCPS, 230, 194, 100, 28,
+          ES_AUTOHSCROLL | WS_BORDER);
+    child(L"STATIC", L"", 795, 20, 236, 440, 55);
     child(L"STATIC",
           L"Cycle: equip, brief settle, one click, return. Regular clicks pause only during the switch/shot. "
-          L"This timer does not read the game's cooldown.\nAuto mode stops cycling when the player is lost. "
+          L"Pulse CPS controls one click's down/up duration; it is not shots/sec. The 1.10s wait still "
+          L"applies.\nAuto mode stops cycling when the player is lost. "
           L"Ctrl+Alt+Esc stops all input.",
-          796, 20, 260, 440, 90);
-    child(L"BUTTON", L"Done", CROSSDONE, 340, 360, 120, 32);
+          796, 20, 300, 440, 105);
+    child(L"BUTTON", L"Done", CROSSDONE, 340, 414, 120, 32);
     crossLabels();
     return 0;
   }
   if (m == WM_COMMAND) {
     int id = LOWORD(wp);
+    if (id == CROSSCPS && HIWORD(wp) == EN_KILLFOCUS) {
+      wchar_t b[80]{};
+      GetDlgItemTextW(w, CROSSCPS, b, 80);
+      double value = state.config().crossCPS;
+      try {
+        std::wstring input = b;
+        std::replace(input.begin(), input.end(), L',', L'.');
+        size_t end = 0;
+        double parsed = std::stod(input, &end);
+        if (end == input.size() && std::isfinite(parsed))
+          value = std::clamp(parsed, .1, 200.);
+      } catch (...) {
+      }
+      {
+        std::lock_guard<std::mutex> l(state.mutex);
+        state.settings.crossCPS = value;
+      }
+      SetDlgItemTextW(w, CROSSCPS, number(value).c_str());
+      save();
+      return 0;
+    }
     if (id == CROSSDONE) {
       DestroyWindow(w);
       return 0;
@@ -236,6 +266,7 @@ LRESULT CALLBACK crossWindow(HWND w, UINT m, WPARAM wp, LPARAM lp) {
       return 0;
     }
     if (id == CROSSSLOT || id == RETURNSLOT || id == CROSSTRIGGER) {
+      ui.recording = false;
       state.armed = false;
       state.crossArmed = false;
       ui.crossRecording = id == CROSSSLOT ? 1 : id == RETURNSLOT ? 2 : 3;
@@ -275,7 +306,7 @@ void showCrossbow() {
   c.hCursor = LoadCursorW(nullptr, IDC_ARROW);
   RegisterClassW(&c);
   HWND w = CreateWindowExW(WS_EX_TOOLWINDOW, c.lpszClassName, L"Luxware auto crossbow",
-                           WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 500, 450,
+                           WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 500, 510,
                            ui.window, nullptr, c.hInstance, nullptr);
   ShowWindow(w, SW_SHOW);
   SetForegroundWindow(w);
@@ -348,6 +379,10 @@ void captureBinding(int kind, int code) {
   s.bindKind = kind;
   s.bindCode = code;
   s.bindMods = ui.physicalMods;
+  if (crossBindingConflict(s)) {
+    status("That binding is used by crossbow setup. Choose another toggle.");
+    return;
+  }
   {
     std::lock_guard<std::mutex> l(state.mutex);
     state.settings = s;
@@ -437,7 +472,7 @@ LRESULT CALLBACK keyboardHook(int n, WPARAM message, LPARAM data) {
             if (s.hold)
               state.armed = false;
           } else if (down && !repeated && !ui.bindingDown &&
-                     (state.fixedPreset || ui.physicalMods == s.bindMods) && front(state.source)) {
+                     (s.bindMods == 0 || ui.physicalMods == s.bindMods) && front(state.source)) {
             ui.bindingDown = true;
             state.bindingHeld = true;
             PostMessageW(ui.window, APP_BIND, 1, 0);
@@ -494,7 +529,7 @@ LRESULT CALLBACK mouseHook(int n, WPARAM message, LPARAM data) {
           state.bindingHeld = false;
           if (s.hold)
             state.armed = false;
-        } else if (down && !ui.bindingDown && (state.fixedPreset || ui.physicalMods == s.bindMods) &&
+        } else if (down && !ui.bindingDown && (s.bindMods == 0 || ui.physicalMods == s.bindMods) &&
                    front(state.source)) {
           ui.bindingDown = true;
           state.bindingHeld = true;
@@ -565,6 +600,8 @@ void layout() {
     place(STOP, 260, h - 88, 116, 30, true);
     place(UPDATES, 286, 14, 90, 28, true);
     place(CROSSBOW, 32, 292, 332, 26, true);
+    place(CPS, 145, 216, 85, 28, true);
+    place(BIND, 32, 249, 332, 28, true);
     ui.preview = {dip(416), dip(104), dip(w - 24), dip(h - 100)};
     InvalidateRect(ui.window, nullptr, TRUE);
     return;
@@ -746,12 +783,10 @@ void paint(HWND window, HDC dc) {
     text(dc, 32, y + 12 - ui.scroll, title, RGB(225, 225, 231));
   };
   if (state.fixedPreset) {
-    card(160, 164, L"ONE FIXED PRESET");
+    card(160, 164, L"FIXED AIM PRESET");
     text(dc, 32, 195, L"Snap on | No smoothing", red, ui.mono);
-    text(dc, 32, 220, number(s.cps, 2) + L" CPS | " + number(s.duty * 100, 0) + L"% duty | Left click", muted,
-         ui.mono);
-    text(dc, 32, 245, L"F6 toggles aim + clicks", muted, ui.mono);
-    text(dc, 32, 270, L"One entity | Ctrl+Shift+R resets", muted, ui.mono);
+    text(dc, 32, 220, L"Clicker CPS", muted, ui.mono);
+    text(dc, 242, 220, L"40% duty", muted, ui.mono);
 
     card(340, 150, L"Capture & your avatar");
     text(dc, 32, 471, own ? L"Saved avatar reference loaded" : L"Mark your own avatar once to enable aim",
@@ -974,11 +1009,11 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
   if (state.fixedPreset && m == WM_CREATE) {
     HWND heading = control(L"STATIC", L"One fixed preset - no tuning required", 780, 0, w);
     MoveWindow(heading, 20, 25, 500, 32, TRUE);
-    HWND description =
-        control(L"STATIC",
-                L"Snap / no smoothing, one entity, F6 toggle.\n23.43 CPS, 40% duty, left click.\nThe bundled "
-                L"detector and processing budget are managed.\nCtrl+Alt+Esc stops everything.",
-                781, 0, w);
+    HWND description = control(
+        L"STATIC",
+        L"Snap / no smoothing, one entity.\nSaved clicker CPS and toggle, 40% duty, left click.\nThe bundled "
+        L"detector and processing budget are managed.\nCtrl+Alt+Esc stops everything.",
+        781, 0, w);
     MoveWindow(description, 20, 75, 500, 110, TRUE);
     MoveWindow(button(L"Check for updates", CHECKUPDATE, w), 20, 205, 230, 32, TRUE);
     MoveWindow(control(L"STATIC", updates.message.c_str(), 790, 0, w), 20, 255, 500, 65, TRUE);
@@ -1273,6 +1308,8 @@ void renderOwnWindow(const std::filesystem::path &path) {
 void command(int id, int notification) {
   if (state.fixedPreset) {
     switch (id) {
+    case BIND:
+    case CPS:
     case CROSSBOW:
     case STOP:
     case REFRESH:
@@ -1358,6 +1395,8 @@ void command(int id, int notification) {
     return;
   }
   if (id == BIND) {
+    ui.crossRecording = 0;
+    crossLabels();
     state.armed = false;
     ui.recording = !ui.recording;
     ui.recordUntil = now() + 15;
@@ -1486,6 +1525,8 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
         button(pair.second, pair.first);
     if (state.fixedPreset) {
       button(L"Auto crossbow...", CROSSBOW);
+      button(L"Toggle key...", BIND);
+      ui.cps = control(L"EDIT", number(s.cps).c_str(), CPS, ES_AUTOHSCROLL | WS_BORDER);
       if (ui.button)
         DestroyWindow(ui.button);
       ui.button = nullptr;
@@ -1624,6 +1665,8 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
       status("Binding recording timed out");
     }
     auto s = state.config();
+    SetWindowTextW(GetDlgItem(w, BIND), ui.recording ? L"Press key or mouse (Esc cancels)"
+                                                     : (L"Toggle: " + bindingName(s)).c_str());
     SetWindowTextW(GetDlgItem(w, CROSSBOW), !s.crossMode          ? L"Auto crossbow: Off..."
                                             : !crossConfigured(s) ? L"Auto crossbow: finish setup..."
                                             : s.crossMode == 2    ? L"Auto crossbow: Automatic..."
@@ -1793,14 +1836,13 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   check("startsInCompactView", !ui.previewVisible);
   check("managedPresetEnabled", state.fixedPreset && state.config().snap && state.config().single);
   bool absent = true;
-  for (int id : {BIND, HOLDMODE, TOGGLEMODE, MAINSENS, MAINHZ, SNAP, CLICKS, BUTTON, CPS, DUTY, SINGLE,
-                 IMPORT, SETTINGS})
+  for (int id :
+       {HOLDMODE, TOGGLEMODE, MAINSENS, MAINHZ, SNAP, CLICKS, BUTTON, DUTY, SINGLE, IMPORT, SETTINGS})
     absent = absent && !GetDlgItem(window, id);
   check("tuningAndAdvancedControlsAreAbsent", absent);
   command(SNAP, 0);
   command(CLICKS, 0);
   command(HOLDMODE, 0);
-  command(BIND, 0);
   command(IMPORT, 0);
   check("legacyTuningCommandsCannotChangePreset", state.config().snap && state.config().clicks &&
                                                       !state.config().hold && !ui.recording &&
@@ -1814,6 +1856,22 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   check("previewStillOpens", ui.previewVisible);
   command(PREVIEW, 0);
   check("previewStillCloses", !ui.previewVisible);
+  check("mainCpsAndToggleControlsExist", GetDlgItem(window, CPS) && GetDlgItem(window, BIND));
+  SetWindowTextW(ui.cps, L"31.75");
+  command(CPS, EN_KILLFOCUS);
+  check("mainDecimalCpsActuallyUpdates", state.config().cps == 31.75);
+  command(BIND, 0);
+  ui.physicalMods = 0;
+  captureBinding(0, VK_F8);
+  check("mainKeyboardToggleRecorderWorks",
+        state.config().bindCode == VK_F8 && !ui.recording && !state.config().hold);
+  command(BIND, 0);
+  captureBinding(1, 4);
+  check("mainMouseToggleRecorderWorks",
+        state.config().bindKind == 1 && state.config().bindCode == 4 && !ui.recording);
+  captureBinding(0, VK_F6);
+  SetWindowTextW(ui.cps, L"23.43");
+  command(CPS, EN_KILLFOCUS);
   auto preset = state.config();
   check("fixedCpsDutyAndActivation",
         preset.cps == 23.43 && preset.duty == .4 && preset.bindCode == VK_F6 && !preset.hold);
@@ -1834,6 +1892,9 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   RegisterClassW(&bowClass);
   HWND bowPanel = CreateWindowExW(0, bowClass.lpszClassName, L"Crossbow test", WS_OVERLAPPED, 0, 0, 500, 450,
                                   window, nullptr, bowClass.hInstance, nullptr);
+  SetDlgItemTextW(bowPanel, CROSSCPS, L"12.50");
+  SendMessageW(bowPanel, WM_COMMAND, MAKEWPARAM(CROSSCPS, EN_KILLFOCUS), 0);
+  check("crossbowDecimalCpsIndependent", state.config().crossCPS == 12.5 && state.config().cps == 23.43);
   check("crossbowSetupControlsExist",
         bowPanel && GetDlgItem(window, CROSSBOW) && GetDlgItem(bowPanel, CROSSMODE) &&
             GetDlgItem(bowPanel, CROSSSLOT) && GetDlgItem(bowPanel, RETURNSLOT));

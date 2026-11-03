@@ -75,3 +75,7 @@ order, balanced releases, no-player clicker behavior and focus-loss gating. Hidd
 window tests exercise slot/mouse-trigger recording and mode/Done handlers. These tests do
 not post physical keys/mouse events, validate a live game's cooldown/equip acceptance,
 or prove automatic combat identification. Auto mode means current eligible visual target.
+
+## 1.4.1 saved CPS and toggle
+
+Separate decimal clicker/pulse CPS values survive loading, managed aim configuration and saving. Main keyboard/mouse toggle recording is restored, with crossbow binding conflicts blocked. Native owned-UI tests exercise both decimal edit controls and both recording handlers. Production event-sink tests measure crossbow press duration at 10 pulse CPS and verify equip/fire/return ordering, releases and foreground cancellation. These checks do not test physical global shortcuts or a live game's input/cooldown acceptance.

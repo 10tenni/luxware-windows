@@ -1,4 +1,4 @@
-LUXWARE WINDOWS 1.4 — ONE FIXED PRESET
+LUXWARE WINDOWS 1.4.1 — ONE FIXED PRESET
 
 Extract the ENTIRE ZIP. Open Luxware.exe on Windows. Keep the model and DLLs together.
 
@@ -9,8 +9,9 @@ Extract the ENTIRE ZIP. Open Luxware.exe on Windows. Keep the model and DLLs tog
 5. Ctrl+Alt+Esc / STOP ALL stops everything.
 6. Ctrl+Shift+R / Reset target clears the lock and stops input. F6 acquires again.
 
-No sliders or editable tuning fields. Snap/no smoothing, one entity, left click,
-23.43 CPS and 40% duty are fixed. Old tuning settings cannot override this profile.
+Aim stays fixed. Clicker CPS and crossbow pulse CPS are independently editable and saved.
+Toggle records a keyboard key/chord or mouse button. Default F6; press once on, again off.
+Snap/no smoothing, one entity, left click and 40% duty remain fixed. Old tuning settings cannot override this profile.
 1000 Hz is an input-check target, NOT 1 ms capture/detection.
 
 Saved avatar views remain local. On a fresh PC, scan your visible body in third person,
@@ -39,3 +40,6 @@ clicking pauses briefly for equip -> one shot -> return, then resumes.
 This does NOT read cooldowns or verify that the game accepted a shot/slot key.
 No eligible player stops auto-mode cycling; ordinary activated clicking continues.
 F6 off or Ctrl+Alt+Esc stops cycling. Focus loss never types into another app.
+
+Crossbow pulse CPS sets one click pair's press/release timing, not shots/sec.
+The 1.10-second wait remains. Different CPS does not bypass the game cooldown.

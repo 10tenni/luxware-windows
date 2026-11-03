@@ -458,7 +458,7 @@ inline void inputLoop(
           equippedReturn = 0;
       }
       if (accepted)
-        cross.accepted(t);
+        cross.accepted(t, s.crossCPS);
     }
     if (osHeld && (!allowed || (!crossOwnsClick &&
                                 (!s.clicks || heldRight != s.right || !clock.held || t >= clock.nextUp))))
