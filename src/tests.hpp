@@ -167,6 +167,47 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     customPulse.accepted(11.221, 5);
     check("crossbowCustomCpsControlsUpTiming", customPulse.poll(11.340, true) == CrossbowCycle::none &&
                                                    customPulse.poll(11.342, true) == CrossbowCycle::restore);
+    Shared rateChange;
+    rateChange.scan = rateChange.armed = true;
+    rateChange.settings.aim = false;
+    rateChange.settings.cps = .1;
+    rateChange.source = reinterpret_cast<HWND>(1);
+    rateChange.view.client = {0, 0, 1000, 800};
+    std::atomic<int> rateDown{0}, rateUp{0};
+    std::thread rateThread([&] {
+      inputLoop(
+          rateChange,
+          [&](INPUT &in) {
+            if (in.type == INPUT_MOUSE && (in.mi.dwFlags & MOUSEEVENTF_LEFTDOWN))
+              ++rateDown;
+            if (in.type == INPUT_MOUSE && (in.mi.dwFlags & MOUSEEVENTF_LEFTUP))
+              ++rateUp;
+            return UINT(1);
+          },
+          [](HWND) { return true; }, [] { return POINT{500, 400}; });
+    });
+    auto ratePump = [&](double seconds) {
+      double start = now();
+      while (now() - start < seconds) {
+        rateChange.heartbeat = now();
+        {
+          std::lock_guard<std::mutex> lock(rateChange.mutex);
+          rateChange.view.received = now();
+        }
+        Sleep(2);
+      }
+    };
+    ratePump(.06);
+    {
+      std::lock_guard<std::mutex> lock(rateChange.mutex);
+      rateChange.settings.cps = 25;
+    }
+    ratePump(.24);
+    rateChange.armed = false;
+    ratePump(.03);
+    rateChange.quit = true;
+    rateThread.join();
+    check("productionCpsEditReleasesOldSlowPhaseAndResponds", rateDown >= 5 && rateDown == rateUp);
     Tensorizer reusable;
     const float *storage = nullptr;
     bool stable = true;

@@ -318,7 +318,7 @@ inline void inputLoop(
   HWND motionSource = nullptr;
   bool motionCamera = true, motionSnap = true;
   double motionWidth = 0, motionHeight = 0;
-  double nextMove = 0, lastHz = 0, lastRates = 0;
+  double nextMove = 0, lastHz = 0, lastRates = 0, lastCps = 0, lastDuty = 0;
   auto &frameTime = correction.frameTime, &appliedX = correction.appliedX, &appliedY = correction.appliedY,
        &filterX = correction.filterX, &filterY = correction.filterY, &lastMotion = correction.lastMotion;
   auto send = [&](DWORD flags, LONG x, LONG y) {
@@ -459,6 +459,13 @@ inline void inputLoop(
       }
       if (accepted)
         cross.accepted(t, s.crossCPS);
+    }
+    if (s.cps != lastCps || s.duty != lastDuty) {
+      if (!crossOwnsClick)
+        release();
+      clock = ClickClock{};
+      lastCps = s.cps;
+      lastDuty = s.duty;
     }
     if (osHeld && (!allowed || (!crossOwnsClick &&
                                 (!s.clicks || heldRight != s.right || !clock.held || t >= clock.nextUp))))
