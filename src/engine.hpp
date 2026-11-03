@@ -1,6 +1,7 @@
 #pragma once
 #include "capture.hpp"
 #include "model.hpp"
+#include "crossbow.hpp"
 #include <mmsystem.h>
 
 namespace lux {
@@ -23,7 +24,7 @@ struct Shared {
   double cps = 0, moves = 0, manualY = 0;
   bool manualMoved = false;
   std::atomic<bool> quit{false}, scan{false}, armed{false}, modelReady{false};
-  std::atomic<bool> bindingHeld{false};
+  std::atomic<bool> bindingHeld{false}, crossArmed{false}, crossBlocked{false};
   std::atomic<HWND> source{nullptr};
   std::atomic<unsigned> reset{0}, reload{0}, calibrate{0};
   std::atomic<double> heartbeat{0};
@@ -38,6 +39,7 @@ struct Shared {
   }
   void stop() {
     armed = false;
+    crossArmed = false;
     bindingHeld = false;
     scan = false;
     reset++;
@@ -304,6 +306,10 @@ inline void inputLoop(
         }) {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
   ClickClock clock;
+  CrossbowCycle cross;
+  int pendingKeyUp = 0, equippedReturn = 0;
+  HWND crossSource = nullptr;
+  int previousCrossSlot = 0, previousReturnSlot = 0, previousCrossMode = 0;
   bool osHeld = false, heldRight = false;
   Rates clicks, moves;
   AimMemory correction;
@@ -332,6 +338,28 @@ inline void inputLoop(
         shared.inputError.clear();
     }
     return accepted == 1;
+  };
+  auto keyEvent = [&](int key, bool up) {
+    INPUT i{};
+    i.type = INPUT_KEYBOARD;
+    i.ki.wVk = WORD(key);
+    i.ki.dwFlags = up ? KEYEVENTF_KEYUP : 0;
+    i.ki.dwExtraInfo = eventTag;
+    UINT accepted = sink(i);
+    if (accepted != 1) {
+      std::lock_guard<std::mutex> lock(shared.mutex);
+      shared.inputError =
+          "SendInput rejected a crossbow key event. Cycle waits; check game input permissions.";
+    }
+    return accepted == 1;
+  };
+  auto tap = [&](int key) {
+    if (pendingKeyUp || !keyEvent(key, false))
+      return false;
+    pendingKeyUp = key;
+    if (keyEvent(key, true))
+      pendingKeyUp = 0;
+    return true;
   };
   auto release = [&]() {
     if (osHeld && send(heldRight ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_LEFTUP, 0, 0)) {
@@ -382,7 +410,58 @@ inline void inputLoop(
     bool allowed = shared.armed && (!s.hold || shared.bindingHeld) && shared.scan && foreground(source) &&
                    t - shared.heartbeat.load() < .25 && t >= received && t - received < .5 && client.w > 0 &&
                    client.h > 0 && contains(client, pointer);
-    if (osHeld && (!allowed || !s.clicks || heldRight != s.right || !clock.held || t >= clock.nextUp))
+    if (pendingKeyUp && keyEvent(pendingKeyUp, true))
+      pendingKeyUp = 0;
+    bool crossChanged = source != crossSource || s.crossSlot != previousCrossSlot ||
+                        s.returnSlot != previousReturnSlot || s.crossMode != previousCrossMode;
+    bool crossEnabled =
+        allowed && !shared.crossBlocked && crossConfigured(s) && !crossChanged &&
+        (s.crossMode == 2 ? target.has_value() && t - received < .15 : shared.crossArmed.load());
+    if (!allowed || crossChanged)
+      shared.crossArmed = false;
+    crossSource = source;
+    previousCrossSlot = s.crossSlot;
+    previousReturnSlot = s.returnSlot;
+    previousCrossMode = s.crossMode;
+    // Never switch inventory in another foreground app. A lost target inside this source restores the slot.
+    if ((!crossEnabled || !cross.running) && equippedReturn && allowed && !shared.crossBlocked &&
+        !pendingKeyUp) {
+      release();
+      if (!osHeld && tap(equippedReturn))
+        equippedReturn = 0;
+    }
+    if (!allowed || crossChanged)
+      equippedReturn = 0;
+    auto crossAction = cross.poll(t, crossEnabled);
+    bool crossOwnsClick = cross.busy() || crossAction != CrossbowCycle::none || equippedReturn != 0;
+    if (crossOwnsClick && crossAction != CrossbowCycle::fireUp && cross.phase != 2)
+      release();
+    if (crossEnabled && !pendingKeyUp) {
+      bool accepted = false;
+      if (crossAction == CrossbowCycle::equip && !osHeld) {
+        accepted = tap(s.crossSlot);
+        if (accepted)
+          equippedReturn = s.returnSlot;
+      } else if (crossAction == CrossbowCycle::fireDown && !osHeld) {
+        accepted = send(MOUSEEVENTF_LEFTDOWN, 0, 0);
+        if (accepted) {
+          osHeld = true;
+          heldRight = false;
+          clicks.add(t);
+        }
+      } else if (crossAction == CrossbowCycle::fireUp) {
+        release();
+        accepted = !osHeld;
+      } else if (crossAction == CrossbowCycle::restore && !osHeld) {
+        accepted = tap(equippedReturn);
+        if (accepted)
+          equippedReturn = 0;
+      }
+      if (accepted)
+        cross.accepted(t);
+    }
+    if (osHeld && (!allowed || (!crossOwnsClick &&
+                                (!s.clicks || heldRight != s.right || !clock.held || t >= clock.nextUp))))
       release();
     if (!allowed) {
       clock.tick(t, false, s.cps, s.duty);
@@ -391,7 +470,7 @@ inline void inputLoop(
       motion.clear();
       lead.clear();
     } else {
-      auto action = osHeld ? ClickClock::none : clock.tick(t, s.clicks, s.cps, s.duty);
+      auto action = osHeld ? ClickClock::none : clock.tick(t, s.clicks && !crossOwnsClick, s.cps, s.duty);
       if (action == ClickClock::down && !osHeld) {
         if (send(s.right ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_LEFTDOWN, 0, 0)) {
           osHeld = true;
@@ -507,6 +586,12 @@ inline void inputLoop(
   for (int i = 0; osHeld && i < 10; i++) {
     release();
     if (osHeld)
+      Sleep(1);
+  }
+  for (int i = 0; pendingKeyUp && i < 10; ++i) {
+    if (keyEvent(pendingKeyUp, true))
+      pendingKeyUp = 0;
+    else
       Sleep(1);
   }
   if (waitable)

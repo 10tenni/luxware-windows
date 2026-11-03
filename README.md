@@ -1,4 +1,4 @@
-# Luxware for Windows 1.3.0 — one fixed preset
+# Luxware for Windows 1.4.0 — fixed aim preset + auto crossbow
 
 Extract the complete Windows ZIP and run **Luxware.exe**. Keep the model and DLLs together. No Python installation, cloud account or API key is needed to run the app.
 
@@ -15,11 +15,21 @@ Your saved avatar images remain in Local AppData. On a new PC or after an outfit
 
 **Preview** expands actual captured pixels and detections beside the compact panel. It never substitutes an aim trainer or internal game coordinates for image analysis.
 
+## Auto crossbow
+
+Open **Auto crossbow…**. Record the single letter/number that equips your crossbow, then a different letter/number that returns to your normal weapon. These are individual key presses, not a typed sequence. Choose **Recorded toggle key** or **Automatic: active input + visible player**. Crossbow defaults to Off and requires both inventory keys before any switching. Setup stops input; close the panel and reactivate with F6 afterward.
+
+In toggle mode, record any supported keyboard key or Mouse 3/4/5 (default F7), focus the selected game with F6 input active, then press that trigger to toggle cycling. F6, Esc, modifier-only keys and R are reserved for controls; left/right mouse are excluded as triggers to avoid fighting normal gameplay/clicking. Avoid inventory keys that conflict with your game's movement/other controls. In automatic mode, a fresh current eligible model detection starts the timer; a missing/stale target cancels it and resumes ordinary activated clicking. It cannot distinguish actual combat from merely seeing an eligible player.
+
+Timing is fixed: wait **1.10 seconds**, equip, allow a 20 ms settle, press/release left mouse for 17 ms, return, then wait another 1.10 seconds. Regular clicking continues between cycles and pauses briefly during equip/fire/return to prevent unwanted shots. The scheduler never catches up with a burst after a stall. Rejected key-up events are retried; generated keyboard events carry the same injected-event tag as the clicker. Crossbow switching pauses while Ctrl/Alt/Windows keys are held to avoid sending inventory keys as system shortcuts. Switching stops when capture/input stops, UI heartbeat expires, capture becomes stale, the pointer leaves the client or the selected game loses focus. It never types a return key into another foreground app. A stop/focus loss can therefore leave the equipped inventory slot unchanged.
+
+This is **timer-based switching, not cooldown detection**. No game state is read. The 1.10-second delay is your requested interval, not a verified crossbow cooldown. The actual shot/slot acceptance, reload behavior, latency and any game-specific equip requirements need testing in the game. No immediate equip/shot guarantee is made.
+
 ## Fixed profile
 
-There are no sliders, editable CPS/duty fields, activation-binding recorder, mode/tuning menu, model importer or manual GPU switch. The Updates panel is read-only apart from checking/installing updates. The application enforces the profile during normal loading, configuration access and input dispatch; older tuning values and edits to numeric INI fields do not override it.
+There are no sliders, editable CPS/duty fields, aim-activation-binding recorder, aim-tuning menu, model importer or manual GPU switch. The Updates panel is read-only apart from checking/installing updates. The application enforces the profile during normal loading, configuration access and input dispatch; older tuning values and edits to numeric INI fields do not override it.
 
-The profile uses full-strength Snap, zero smoothing, one-entity tracking, a fixed F6 toggle, left clicking at 23.43 CPS with 40% duty, the bundled avatar detector, 0.40 detection confidence, a 0.50 acquisition FOV radius, sensitivity conversion 1.0 and bounded optional target lead of 1 ms plus measured frame age. DirectML is requested automatically with explicit CPU fallback. Analysis requests up to 120 FPS with the game-friendly 60 FPS GPU / 30 FPS CPU caps and idle budget; input checks request a 1000 Hz limit. Perspective and internal avatar-image rotation are preserved as setup data. Custom model paths are ignored.
+The profile uses full-strength Snap, zero smoothing, one-entity tracking, a fixed F6 toggle, left clicking at 23.43 CPS with 40% duty, the bundled avatar detector, 0.40 detection confidence, a 0.50 acquisition FOV radius, sensitivity conversion 1.0 and bounded optional target lead of 1 ms plus measured frame age. DirectML is requested automatically with explicit CPU fallback. Analysis requests up to 120 FPS with the game-friendly 60 FPS GPU / 30 FPS CPU caps and idle budget; input checks request a 1000 Hz limit. Perspective, crossbow slot/trigger/mode setup and internal avatar-image rotation are preserved as setup data. Custom model paths are ignored.
 
 This is one tested baseline, not a proven optimum for every PC or in-game sensitivity. Locking controls cannot make the model recognize every appearance or make arbitrary game mouse settings equivalent. Actual live PvP accuracy and input acceptance still need testing on the PC.
 

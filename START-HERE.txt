@@ -1,4 +1,4 @@
-LUXWARE WINDOWS 1.3 — ONE FIXED PRESET
+LUXWARE WINDOWS 1.4 — ONE FIXED PRESET
 
 Extract the ENTIRE ZIP. Open Luxware.exe on Windows. Keep the model and DLLs together.
 
@@ -28,3 +28,14 @@ Prerequisites\VC_redist.x64.exe when its runtime is missing.
 
 Tested fixed baseline. Exact PvP accuracy, game input acceptance and performance vary
 by hardware/game settings. See README.md, VALIDATION.md and the included reports.
+
+OPTIONAL AUTO CROSSBOW
+Open Auto crossbow... Record your crossbow slot key and normal-weapon return key.
+Slots use one letter/number each. Choose Recorded toggle key (default F7, also
+supports Mouse 3/4/5) or Automatic (active F6 input + fresh detected player).
+Close setup, focus the game and activate F6 again. In toggle mode press your
+recorded trigger too. Initial/repeat wait is fixed at 1.10 seconds. Regular
+clicking pauses briefly for equip -> one shot -> return, then resumes.
+This does NOT read cooldowns or verify that the game accepted a shot/slot key.
+No eligible player stops auto-mode cycling; ordinary activated clicking continues.
+F6 off or Ctrl+Alt+Esc stops cycling. Focus loss never types into another app.

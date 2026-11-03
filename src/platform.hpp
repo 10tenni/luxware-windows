@@ -160,12 +160,18 @@ struct Settings {
          prediction = 0, fps = 120, hz = 1000;
   int bindKind = 0, bindCode = VK_F6, bindMods = 0;
   int avatarNext = 0;
+  int crossMode = 0, crossSlot = 0, returnSlot = 0, crossTrigger = VK_F7, crossTriggerKind = 0;
   std::wstring modelPath;
 };
 // One tested application profile. Only input perspective and internal avatar-file rotation survive.
 inline Settings managedPreset(const Settings &saved) {
   Settings s;
   s.camera = saved.camera;
+  s.crossMode = saved.crossMode;
+  s.crossSlot = saved.crossSlot;
+  s.returnSlot = saved.returnSlot;
+  s.crossTrigger = saved.crossTrigger;
+  s.crossTriggerKind = saved.crossTriggerKind;
   s.avatarNext = saved.avatarNext;
   s.hold = false;
   s.aim = true;
@@ -208,6 +214,11 @@ inline Settings loadSettings(const std::filesystem::path &settingsFile = {}) {
       return value;
     }
   };
+  s.crossMode = std::clamp(int(num(L"crossMode", 0)), 0, 2);
+  s.crossSlot = int(num(L"crossSlot", 0));
+  s.returnSlot = int(num(L"returnSlot", 0));
+  s.crossTrigger = int(num(L"crossTrigger", VK_F7));
+  s.crossTriggerKind = int(num(L"crossTriggerKind", 0));
   s.camera = num(L"camera", 1) != 0;
   s.hold = num(L"hold", 0) != 0;
   s.aim = num(L"aim", 1) != 0;
@@ -256,6 +267,11 @@ inline void saveSettings(const Settings &s, const std::filesystem::path &setting
   auto put = [&](const wchar_t *k, double v) {
     WritePrivateProfileStringW(L"Luxware", k, std::to_wstring(v).c_str(), file.c_str());
   };
+  put(L"crossMode", s.crossMode);
+  put(L"crossSlot", s.crossSlot);
+  put(L"returnSlot", s.returnSlot);
+  put(L"crossTrigger", s.crossTrigger);
+  put(L"crossTriggerKind", s.crossTriggerKind);
   put(L"camera", s.camera);
   put(L"hold", s.hold);
   put(L"aim", s.aim);

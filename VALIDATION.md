@@ -65,3 +65,13 @@ Migration checks use a dedicated temporary INI file (not user settings) to verif
 The normal application and hidden UI mode enforce one profile; standalone core fixtures remain configurable only inside tests. New checks verify old raw tuning is ignored, camera type/avatar-file rotation remain valid setup state, and the production input loop generates the managed click behavior even when raw settings request hold mode/disabled clicks. No OS events are sent. UI checks now verify tuners/binding/model import controls are absent, old commands cannot alter effective settings, both input types/capture/reset/preview/start-stop remain functional, and the Updates dialog has no tuning controls. Historical tests for configurable modes remain regression coverage for the lower-level library rather than editable shipping UI.
 
 The preset is selected from the existing validated defaults and bounded-lead control tests. It is not a benchmark-proven universal optimum for unknown game sensitivity/hardware or proof of live PvP accuracy. Numeric INI edits are overridden; only necessary perspective and avatar storage metadata are carried forward.
+
+## 1.4 auto crossbow scope
+
+Added monotonic crossbow sequence tests for initial 1.10-second wait, equip settling,
+no catch-up burst, cancellation/restart delay, saved slot setup and invalid slot rejection.
+Production input-loop tests use an injected sink to verify actual keyboard/mouse dispatch
+order, balanced releases, no-player clicker behavior and focus-loss gating. Hidden owned
+window tests exercise slot/mouse-trigger recording and mode/Done handlers. These tests do
+not post physical keys/mouse events, validate a live game's cooldown/equip acceptance,
+or prove automatic combat identification. Auto mode means current eligible visual target.

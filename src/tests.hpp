@@ -16,6 +16,122 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
   double clockInterval = 0, clockHold = 0, referenceMS = 0, optimizedMS = 0, maxPixelError = 0,
          pixelChecksum = 0;
   try {
+    Settings cb;
+    cb.crossMode = 2;
+    cb.crossSlot = '3';
+    cb.returnSlot = '1';
+    check("crossbowRequiresTwoDistinctRecordedSlots", crossConfigured(cb));
+    cb.returnSlot = '3';
+    check("crossbowRejectsSameSlot", !crossConfigured(cb));
+    cb.returnSlot = '1';
+    cb.crossSlot = VK_ESCAPE;
+    check("crossbowRejectsNonInventoryKeys", !crossConfigured(cb));
+    cb.crossSlot = '3';
+    auto crossFile = std::filesystem::temp_directory_path() / L"Luxware-crossbow-test.ini";
+    saveSettings(cb, crossFile);
+    auto persistedCross = managedPreset(loadSettings(crossFile));
+    check("crossbowRecordedSetupSurvivesManagedPreset", persistedCross.crossSlot == '3' &&
+                                                            persistedCross.returnSlot == '1' &&
+                                                            persistedCross.crossMode == 2);
+    std::filesystem::remove(crossFile);
+    CrossbowCycle schedule;
+    check("crossbowWaitsInitial1100Milliseconds", schedule.poll(10, true) == CrossbowCycle::none &&
+                                                      schedule.poll(11.099, true) == CrossbowCycle::none &&
+                                                      schedule.poll(11.101, true) == CrossbowCycle::equip);
+    schedule.accepted(11.101);
+    check("crossbowEquipSettlesBeforeFiring", schedule.poll(11.11, true) == CrossbowCycle::none &&
+                                                  schedule.poll(11.122, true) == CrossbowCycle::fireDown);
+    schedule.accepted(11.122);
+    schedule.accepted(11.140);
+    schedule.accepted(11.141);
+    check("crossbowNoCatchupBurstAfterStall", schedule.poll(40, true) == CrossbowCycle::equip);
+    schedule.poll(40, false);
+    check("crossbowLossResetsInitialDelay",
+          schedule.poll(41, true) == CrossbowCycle::none && !schedule.busy());
+    // Production dispatch, injected sink only: inventory/fire order and no target => regular clicker.
+    Shared bow;
+    bow.fixedPreset = true;
+    bow.settings = cb;
+    bow.scan = bow.armed = true;
+    bow.source = reinterpret_cast<HWND>(1);
+    bow.view.client = {0, 0, 1000, 800};
+    std::mutex bowEventsMutex;
+    std::vector<int> bowEvents;
+    std::atomic<bool> bowFocus{true};
+    bool rejectedBowRelease = false, taggedBowKeys = true;
+    std::thread bowThread([&] {
+      inputLoop(
+          bow,
+          [&](INPUT &in) {
+            std::lock_guard<std::mutex> lock(bowEventsMutex);
+            if (in.type == INPUT_KEYBOARD) {
+              taggedBowKeys = taggedBowKeys && in.ki.dwExtraInfo == eventTag;
+              if (!rejectedBowRelease && (in.ki.dwFlags & KEYEVENTF_KEYUP)) {
+                rejectedBowRelease = true;
+                return UINT(0);
+              }
+            }
+            if (in.type == INPUT_KEYBOARD)
+              bowEvents.push_back((in.ki.dwFlags & KEYEVENTF_KEYUP) ? -int(in.ki.wVk) : int(in.ki.wVk));
+            else if (in.mi.dwFlags & MOUSEEVENTF_LEFTDOWN)
+              bowEvents.push_back(1000);
+            else if (in.mi.dwFlags & MOUSEEVENTF_LEFTUP)
+              bowEvents.push_back(-1000);
+            return UINT(1);
+          },
+          [&](HWND) { return bowFocus.load(); }, [] { return POINT{500, 400}; });
+    });
+    auto bowPump = [&](double seconds, bool visible) {
+      double start = now();
+      while (now() - start < seconds) {
+        bow.heartbeat = now();
+        {
+          std::lock_guard<std::mutex> lock(bow.mutex);
+          bow.view.received = now();
+          if (visible)
+            bow.view.target = Detection{{.45, .45, .1, .1}, .9f, 1, false, {}};
+          else
+            bow.view.target.reset();
+        }
+        Sleep(2);
+      }
+    };
+    bowPump(1.16, false);
+    bool clickOnly;
+    {
+      std::lock_guard<std::mutex> lock(bowEventsMutex);
+      clickOnly = std::count(bowEvents.begin(), bowEvents.end(), 1000) > 5 &&
+                  std::count(bowEvents.begin(), bowEvents.end(), '3') == 0;
+    }
+    bowPump(1.23, true);
+    bowFocus = false;
+    bowPump(.05, true);
+    size_t afterPause;
+    {
+      std::lock_guard<std::mutex> lock(bowEventsMutex);
+      afterPause = bowEvents.size();
+    }
+    bowPump(.08, true);
+    bow.quit = true;
+    bowThread.join();
+    bool ordered = false, paused = false, balanced = false;
+    {
+      std::lock_guard<std::mutex> lock(bowEventsMutex);
+      auto e = std::find(bowEvents.begin(), bowEvents.end(), '3');
+      if (e != bowEvents.end() && std::distance(e, bowEvents.end()) >= 6)
+        ordered = e[1] == -'3' && e[2] == 1000 && e[3] == -1000 && e[4] == '1' && e[5] == -'1';
+      paused = afterPause == bowEvents.size();
+      balanced = std::count(bowEvents.begin(), bowEvents.end(), 1000) ==
+                     std::count(bowEvents.begin(), bowEvents.end(), -1000) &&
+                 std::count(bowEvents.begin(), bowEvents.end(), '3') ==
+                     std::count(bowEvents.begin(), bowEvents.end(), -'3');
+    }
+    check("crossbowAutomaticNoPlayerLeavesRegularClicker", clickOnly);
+    check("crossbowProductionEquipFireReturnOrder", ordered);
+    check("crossbowProductionFocusLossStopsEvents", paused);
+    check("crossbowProductionBalancedReleases", balanced);
+    check("crossbowRetriesRejectedKeyRelease", rejectedBowRelease && ordered && balanced);
+    check("crossbowGeneratedKeysAreTagged", taggedBowKeys && ordered);
     Tensorizer reusable;
     const float *storage = nullptr;
     bool stable = true;

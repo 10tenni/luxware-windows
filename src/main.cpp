@@ -40,12 +40,21 @@ enum {
   MAINSENS,
   MAINHZ,
   SNAP,
+  CROSSBOW = 240,
+  CROSSMODE,
+  CROSSSLOT,
+  RETURNSLOT,
+  CROSSTRIGGER,
+  CROSSDONE,
   SLIDER = 300
 };
 constexpr UINT APP_BIND = WM_APP + 1, APP_SAVE = WM_APP + 2;
 Shared state;
 Updates updates;
 struct UI {
+  HWND crossbow = nullptr;
+  int crossRecording = 0;
+  double crossRecordUntil = 0;
   HWND window = nullptr, settings = nullptr, source = nullptr, view = nullptr, mode = nullptr,
        button = nullptr, cps = nullptr, duty = nullptr;
   HFONT font = nullptr, big = nullptr, mono = nullptr;
@@ -127,6 +136,149 @@ std::wstring bindingName(const Settings &s) {
       name += L"Key " + std::to_wstring(s.bindCode);
   }
   return name;
+}
+int modifier(int vk);
+void crossLabels() {
+  if (!ui.crossbow)
+    return;
+  auto s = state.config();
+  auto key = [&](int code, int kind = 0) {
+    if (!code && !kind)
+      return std::wstring(L"not set");
+    Settings b;
+    b.bindCode = code;
+    b.bindKind = kind;
+    b.bindMods = 0;
+    return bindingName(b);
+  };
+  SetWindowTextW(GetDlgItem(ui.crossbow, CROSSSLOT), (L"Crossbow: " + key(s.crossSlot)).c_str());
+  SetWindowTextW(GetDlgItem(ui.crossbow, RETURNSLOT), (L"Return slot: " + key(s.returnSlot)).c_str());
+  SetWindowTextW(GetDlgItem(ui.crossbow, CROSSTRIGGER),
+                 (L"Toggle: " + key(s.crossTrigger, s.crossTriggerKind)).c_str());
+  SetWindowTextW(GetDlgItem(ui.crossbow, 795),
+                 ui.crossRecording ? L"Press one key (Esc cancels). Toggle also accepts Mouse 3/4/5."
+                 : crossConfigured(s)
+                     ? L"Ready. F6 input must be active. Initial wait and repeat delay: 1.10 s."
+                     : L"Record distinct crossbow and return slot keys, then choose a mode.");
+  SendMessageW(GetDlgItem(ui.crossbow, CROSSMODE), CB_SETCURSEL, s.crossMode, 0);
+}
+void recordCross(int kind, int code) {
+  if (!ui.crossRecording)
+    return;
+  auto s = state.config();
+  bool valid = ui.crossRecording == 3
+                   ? ((kind == 0 && code != VK_F6 && code != VK_ESCAPE && code != 'R' && !modifier(code)) ||
+                      (kind == 1 && code >= 2 && code <= 4))
+                   : kind == 0 && slotKey(code);
+  if (!valid) {
+    SetWindowTextW(GetDlgItem(ui.crossbow, 795),
+                   L"Slots use one letter/number. Toggle: key or Mouse 3/4/5; F6/R/Esc reserved.");
+    return;
+  }
+  if (ui.crossRecording == 1)
+    s.crossSlot = code;
+  else if (ui.crossRecording == 2)
+    s.returnSlot = code;
+  else {
+    s.crossTrigger = code;
+    s.crossTriggerKind = kind;
+  }
+  {
+    std::lock_guard<std::mutex> l(state.mutex);
+    state.settings = s;
+  }
+  state.crossArmed = false;
+  ui.crossRecording = 0;
+  save();
+  crossLabels();
+}
+LRESULT CALLBACK crossWindow(HWND w, UINT m, WPARAM wp, LPARAM lp) {
+  if (m == WM_CREATE) {
+    ui.crossbow = w;
+    auto child = [&](const wchar_t *cls, const wchar_t *label, int id, int x, int y, int width, int height,
+                     DWORD style = 0) {
+      HWND h = CreateWindowExW(0, cls, label, WS_CHILD | WS_VISIBLE | style, x, y, width, height, w,
+                               (HMENU)INT_PTR(id), GetModuleHandleW(nullptr), nullptr);
+      SendMessageW(h, WM_SETFONT, (WPARAM)ui.font, TRUE);
+      return h;
+    };
+    child(L"STATIC", L"AUTO CROSSBOW | fixed 1.10-second cycle", 790, 20, 20, 440, 25);
+    HWND mode = child(L"COMBOBOX", L"", CROSSMODE, 20, 60, 440, 160, CBS_DROPDOWNLIST | WS_VSCROLL);
+    for (auto label : {L"Off", L"Recorded toggle key", L"Automatic: active input + visible player"})
+      SendMessageW(mode, CB_ADDSTRING, 0, (LPARAM)label);
+    child(L"BUTTON", L"", CROSSSLOT, 20, 108, 215, 32);
+    child(L"BUTTON", L"", RETURNSLOT, 245, 108, 215, 32);
+    child(L"BUTTON", L"", CROSSTRIGGER, 20, 154, 440, 32);
+    child(L"STATIC", L"", 795, 20, 202, 440, 55);
+    child(L"STATIC",
+          L"Cycle: equip, brief settle, one click, return. Regular clicks pause only during the switch/shot. "
+          L"This timer does not read the game's cooldown.\nAuto mode stops cycling when the player is lost. "
+          L"Ctrl+Alt+Esc stops all input.",
+          796, 20, 260, 440, 90);
+    child(L"BUTTON", L"Done", CROSSDONE, 340, 360, 120, 32);
+    crossLabels();
+    return 0;
+  }
+  if (m == WM_COMMAND) {
+    int id = LOWORD(wp);
+    if (id == CROSSDONE) {
+      DestroyWindow(w);
+      return 0;
+    }
+    if (id == CROSSMODE && HIWORD(wp) == CBN_SELCHANGE) {
+      {
+        std::lock_guard<std::mutex> l(state.mutex);
+        state.settings.crossMode = int(SendMessageW(GetDlgItem(w, CROSSMODE), CB_GETCURSEL, 0, 0));
+      }
+      state.crossArmed = false;
+      save();
+      crossLabels();
+      return 0;
+    }
+    if (id == CROSSSLOT || id == RETURNSLOT || id == CROSSTRIGGER) {
+      state.armed = false;
+      state.crossArmed = false;
+      ui.crossRecording = id == CROSSSLOT ? 1 : id == RETURNSLOT ? 2 : 3;
+      ui.crossRecordUntil = now() + 15;
+      crossLabels();
+      return 0;
+    }
+  }
+  if (m == WM_CTLCOLORSTATIC) {
+    SetTextColor((HDC)wp, RGB(225, 225, 231));
+    SetBkColor((HDC)wp, RGB(10, 10, 12));
+    return (LRESULT)ui.background;
+  }
+  if (m == WM_CLOSE) {
+    DestroyWindow(w);
+    return 0;
+  }
+  if (m == WM_DESTROY) {
+    ui.crossbow = nullptr;
+    ui.crossRecording = 0;
+    return 0;
+  }
+  return DefWindowProcW(w, m, wp, lp);
+}
+void showCrossbow() {
+  if (ui.crossbow) {
+    SetForegroundWindow(ui.crossbow);
+    return;
+  }
+  state.armed = false;
+  state.crossArmed = false;
+  WNDCLASSW c{};
+  c.lpfnWndProc = crossWindow;
+  c.hInstance = GetModuleHandleW(nullptr);
+  c.lpszClassName = L"LuxwareCrossbow";
+  c.hbrBackground = ui.background;
+  c.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+  RegisterClassW(&c);
+  HWND w = CreateWindowExW(WS_EX_TOOLWINDOW, c.lpszClassName, L"Luxware auto crossbow",
+                           WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 500, 450,
+                           ui.window, nullptr, c.hInstance, nullptr);
+  ShowWindow(w, SW_SHOW);
+  SetForegroundWindow(w);
 }
 void applyEdits() {
   auto read = [](HWND w, double old, double lo, double hi) {
@@ -231,6 +383,7 @@ LRESULT CALLBACK keyboardHook(int n, WPARAM message, LPARAM data) {
                           ((ui.keys[VK_SHIFT] || ui.keys[VK_LSHIFT] || ui.keys[VK_RSHIFT]) ? 2 : 0) |
                           ((ui.keys[VK_MENU] || ui.keys[VK_LMENU] || ui.keys[VK_RMENU]) ? 4 : 0) |
                           ((ui.keys[VK_LWIN] || ui.keys[VK_RWIN]) ? 8 : 0);
+        state.crossBlocked = (ui.physicalMods & 13) != 0;
         auto binding = state.config();
         if (!down && binding.hold && ui.bindingDown &&
             (ui.physicalMods & binding.bindMods) != binding.bindMods) {
@@ -242,7 +395,25 @@ LRESULT CALLBACK keyboardHook(int n, WPARAM message, LPARAM data) {
       if (down && !repeated && k->vkCode == VK_ESCAPE && (ui.physicalMods & 5) == 5) {
         stop();
         ui.recording = false;
+        ui.crossRecording = 0;
+        crossLabels();
         return CallNextHookEx(nullptr, n, message, data);
+      }
+      if (ui.crossRecording && GetForegroundWindow() == ui.crossbow && down && !mod && !repeated) {
+        if (k->vkCode == VK_ESCAPE) {
+          ui.crossRecording = 0;
+          crossLabels();
+        } else
+          recordCross(0, int(k->vkCode));
+        return 1;
+      }
+      auto crossSettings = state.config();
+      if (!ui.crossRecording && down && !repeated && crossSettings.crossMode == 1 &&
+          crossSettings.crossTriggerKind == 0 && int(k->vkCode) == crossSettings.crossTrigger &&
+          crossConfigured(crossSettings) && state.armed && front(state.source) && ui.physicalMods == 0) {
+        state.crossArmed = !state.crossArmed.load();
+        status(state.crossArmed ? "Crossbow cycle ON" : "Crossbow cycle OFF");
+        return 1;
       }
       if (ui.recording && GetForegroundWindow() == ui.window && down && !mod && !repeated) {
         if (k->vkCode == VK_ESCAPE) {
@@ -298,6 +469,19 @@ LRESULT CALLBACK mouseHook(int n, WPARAM message, LPARAM data) {
       if (message == WM_XBUTTONDOWN || message == WM_XBUTTONUP) {
         button = HIWORD(m->mouseData) == XBUTTON1 ? 3 : 4;
         down = message == WM_XBUTTONDOWN;
+      }
+      if (ui.crossRecording == 3 && GetForegroundWindow() == ui.crossbow && button >= 2 && down) {
+        recordCross(1, button);
+        return 1;
+      }
+      auto cs = state.config();
+      if (!ui.crossRecording && cs.crossMode == 1 && cs.crossTriggerKind == 1 && button == cs.crossTrigger &&
+          crossConfigured(cs) && state.armed && front(state.source)) {
+        if (down) {
+          state.crossArmed = !state.crossArmed.load();
+          status(state.crossArmed ? "Crossbow cycle ON" : "Crossbow cycle OFF");
+        }
+        return 1;
       }
       if (ui.recording && GetForegroundWindow() == ui.window && button >= 0 && down) {
         captureBinding(1, button);
@@ -380,6 +564,7 @@ void layout() {
     place(RESET, 140, h - 88, 110, 30, true);
     place(STOP, 260, h - 88, 116, 30, true);
     place(UPDATES, 286, 14, 90, 28, true);
+    place(CROSSBOW, 32, 292, 332, 26, true);
     ui.preview = {dip(416), dip(104), dip(w - 24), dip(h - 100)};
     InvalidateRect(ui.window, nullptr, TRUE);
     return;
@@ -567,7 +752,7 @@ void paint(HWND window, HDC dc) {
          ui.mono);
     text(dc, 32, 245, L"F6 toggles aim + clicks", muted, ui.mono);
     text(dc, 32, 270, L"One entity | Ctrl+Shift+R resets", muted, ui.mono);
-    text(dc, 32, 295, L"1000 Hz input limit; measured FPS below", muted, ui.mono);
+
     card(340, 150, L"Capture & your avatar");
     text(dc, 32, 471, own ? L"Saved avatar reference loaded" : L"Mark your own avatar once to enable aim",
          muted, ui.mono);
@@ -1088,6 +1273,7 @@ void renderOwnWindow(const std::filesystem::path &path) {
 void command(int id, int notification) {
   if (state.fixedPreset) {
     switch (id) {
+    case CROSSBOW:
     case STOP:
     case REFRESH:
     case SCAN:
@@ -1106,6 +1292,10 @@ void command(int id, int notification) {
     }
   }
 
+  if (id == CROSSBOW) {
+    showCrossbow();
+    return;
+  }
   if (id == PREVIEW) {
     togglePreview();
     return;
@@ -1295,6 +1485,7 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
           pair.first == FIRSTTAB || pair.first == THIRDTAB || pair.first == PREVIEW)
         button(pair.second, pair.first);
     if (state.fixedPreset) {
+      button(L"Auto crossbow...", CROSSBOW);
       if (ui.button)
         DestroyWindow(ui.button);
       ui.button = nullptr;
@@ -1422,11 +1613,22 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
         EnableWindow(GetDlgItem(ui.settings, CHECKUPDATE), !updates.busy());
       }
     }
+    if (ui.crossRecording && now() > ui.crossRecordUntil) {
+      ui.crossRecording = 0;
+      crossLabels();
+    }
+    if (!state.armed)
+      state.crossArmed = false;
     if (ui.recording && now() > ui.recordUntil) {
       ui.recording = false;
       status("Binding recording timed out");
     }
     auto s = state.config();
+    SetWindowTextW(GetDlgItem(w, CROSSBOW), !s.crossMode          ? L"Auto crossbow: Off..."
+                                            : !crossConfigured(s) ? L"Auto crossbow: finish setup..."
+                                            : s.crossMode == 2    ? L"Auto crossbow: Automatic..."
+                                            : state.crossArmed    ? L"Auto crossbow: Toggle ON..."
+                                                                  : L"Auto crossbow: Toggle OFF...");
     for (auto entry : {std::pair<int, int>{MAINSENS, int(s.sensitivity * 100)}, {MAINHZ, int(s.hz)}}) {
       HWND slider = GetDlgItem(w, entry.first);
       if (int(SendMessageW(slider, TBM_GETPOS, 0, 0)) != entry.second)
@@ -1625,6 +1827,33 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   check("updatePanelHasNoTuningControls", updateOnly);
   SendMessageW(updatePanel, WM_COMMAND, DONE, 0);
   check("updatePanelDoneButtonWorks", !IsWindow(updatePanel));
+  WNDCLASSW bowClass{};
+  bowClass.lpfnWndProc = crossWindow;
+  bowClass.hInstance = GetModuleHandleW(nullptr);
+  bowClass.lpszClassName = L"LuxwareCrossbowTest";
+  RegisterClassW(&bowClass);
+  HWND bowPanel = CreateWindowExW(0, bowClass.lpszClassName, L"Crossbow test", WS_OVERLAPPED, 0, 0, 500, 450,
+                                  window, nullptr, bowClass.hInstance, nullptr);
+  check("crossbowSetupControlsExist",
+        bowPanel && GetDlgItem(window, CROSSBOW) && GetDlgItem(bowPanel, CROSSMODE) &&
+            GetDlgItem(bowPanel, CROSSSLOT) && GetDlgItem(bowPanel, RETURNSLOT));
+  SendMessageW(bowPanel, WM_COMMAND, CROSSSLOT, 0);
+  recordCross(0, '3');
+  SendMessageW(bowPanel, WM_COMMAND, RETURNSLOT, 0);
+  recordCross(0, '1');
+  SendMessageW(bowPanel, WM_COMMAND, CROSSTRIGGER, 0);
+  recordCross(1, 3);
+  SendMessageW(GetDlgItem(bowPanel, CROSSMODE), CB_SETCURSEL, 1, 0);
+  SendMessageW(bowPanel, WM_COMMAND, MAKEWPARAM(CROSSMODE, CBN_SELCHANGE), 0);
+  auto bowSetup = state.config();
+  check("crossbowRecordsSlotsAndMouseToggle",
+        crossConfigured(bowSetup) && bowSetup.crossSlot == '3' && bowSetup.returnSlot == '1' &&
+            bowSetup.crossTriggerKind == 1 && bowSetup.crossTrigger == 3 && bowSetup.crossMode == 1);
+  SendMessageW(GetDlgItem(bowPanel, CROSSMODE), CB_SETCURSEL, 2, 0);
+  SendMessageW(bowPanel, WM_COMMAND, MAKEWPARAM(CROSSMODE, CBN_SELCHANGE), 0);
+  check("crossbowAutomaticModeSelectable", state.config().crossMode == 2);
+  SendMessageW(bowPanel, WM_COMMAND, CROSSDONE, 0);
+  check("crossbowDoneClosesAndStopsRecording", !ui.crossbow && !ui.crossRecording);
   state.source = window;
   command(SCAN, 0);
   check("startScanButtonArmsCaptureState", state.scan);
