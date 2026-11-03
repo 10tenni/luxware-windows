@@ -79,3 +79,7 @@ or prove automatic combat identification. Auto mode means current eligible visua
 ## 1.4.1 saved CPS and toggle
 
 Separate decimal clicker/pulse CPS values survive loading, managed aim configuration and saving. Main keyboard/mouse toggle recording is restored, with crossbow binding conflicts blocked. Native owned-UI tests exercise both decimal edit controls and both recording handlers. Production event-sink tests measure crossbow press duration at 10 pulse CPS and verify equip/fire/return ordering, releases and foreground cancellation. These checks do not test physical global shortcuts or a live game's input/cooldown acceptance.
+
+## 1.4.2 screen-only nearest acquisition
+
+Nine controlled acquisition regressions cover first-person center versus third-person cursor, order-independent closest choice, pixel distance on a wide viewport, true circular FOV, invalid/offscreen/stale/future rejection, stale locked observations, preserved single identity and cursor-outside-source gating. The normal worker obtains the actual cursor/client dimensions for this geometry, and preview rendering uses that frame's same query. Existing model, appearance and input-sink tests remain in scope; no internal game coordinates/team visibility or live game input acceptance is tested.

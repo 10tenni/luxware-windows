@@ -208,6 +208,50 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     rateChange.quit = true;
     rateThread.join();
     check("productionCpsEditReleasesOldSlowPhaseAndResponds", rateDown >= 5 && rateDown == rateUp);
+    auto candidate = [](int id, double x, double y, double time = 10) {
+      Track t;
+      t.d = Detection{{x - .025, y - .05, .05, .10}, .9f, id, false, {}};
+      t.time = time;
+      t.confirmations = 2;
+      return t;
+    };
+    auto a = candidate(101, .5, .5), b = candidate(102, .82, .5);
+    Tracker mouseTarget;
+    auto mouseChoice = mouseTarget.choose({a, b}, 10, .5, true, Acquisition{.85, .5, 1920, 1080});
+    check("thirdPersonAcquiresNearestCursorNotScreenCenter", mouseChoice && mouseChoice->d.id == 102);
+    Tracker reverseTarget;
+    auto reverseChoice = reverseTarget.choose({b, a}, 10, .5, true, Acquisition{.85, .5, 1920, 1080});
+    check("nearestChoiceIndependentOfDetectionOrder", reverseChoice && reverseChoice->d.id == 102);
+    Tracker cameraTarget;
+    auto cameraChoice = cameraTarget.choose({b, a}, 10, .5, true, Acquisition{.5, .5, 1920, 1080});
+    check("firstPersonAcquiresNearestCenter", cameraChoice && cameraChoice->d.id == 101);
+    Tracker aspectTarget;
+    auto aspectChoice = aspectTarget.choose({candidate(103, .6, .5), candidate(104, .5, .65)}, 10, .5, true,
+                                            Acquisition{.5, .5, 1920, 1080});
+    check("nearestUsesPixelDistanceOnWideViewport", aspectChoice && aspectChoice->d.id == 104);
+    Tracker circleTarget;
+    auto circleChoice =
+        circleTarget.choose({candidate(105, .64, .5)}, 10, .2, true, Acquisition{.5, .5, 1920, 1080});
+    check("circularFovRejectsPixelDistantHorizontalCandidate", !circleChoice);
+    Tracker absentTarget;
+    auto behind = candidate(106, -.1, .5);
+    auto stale = candidate(107, .5, .5, 9.99);
+    auto future = candidate(108, .5, .5, 10.01);
+    auto malformed = candidate(109, .5, .5);
+    malformed.d.box.w = -1;
+    check("offscreenStaleFutureAndMalformedCandidatesRejected",
+          !absentTarget.choose({behind, stale, future, malformed}, 10, .5, true));
+    auto oldChoice = mouseTarget.choose({a, b}, 10.03, .5, true, Acquisition{.85, .5, 1920, 1080});
+    check("lockedTargetCannotReturnAnOldObservation", !oldChoice && mouseTarget.selectedID() == 102);
+    auto currentB = b;
+    currentB.time = 10.03;
+    auto closer = candidate(110, .85, .5, 10.03);
+    auto stableChoice =
+        mouseTarget.choose({closer, currentB}, 10.03, .5, true, Acquisition{.85, .5, 1920, 1080});
+    check("oneEntityKeepsIdentityWhenAnotherPlayerMovesCloser", stableChoice && stableChoice->d.id == 102);
+    Tracker pointerOutside;
+    check("cursorOutsideSourceCannotAcquire",
+          !pointerOutside.choose({a, b}, 10, .5, true, Acquisition{-0.1, .5, 1920, 1080}));
     Tensorizer reusable;
     const float *storage = nullptr;
     bool stable = true;

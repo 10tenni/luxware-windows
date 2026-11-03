@@ -1,4 +1,4 @@
-# Luxware for Windows 1.4.1 — fixed aim preset + auto crossbow
+# Luxware for Windows 1.4.2 — fixed aim preset + auto crossbow
 
 Extract the complete Windows ZIP and run **Luxware.exe**. Keep the model and DLLs together. No Python installation, cloud account or API key is needed to run the app.
 
@@ -32,6 +32,14 @@ There are no aim-tuning sliders, duty editors, hold-mode controls, model importe
 The profile uses full-strength Snap, zero smoothing, one-entity tracking, a recorded on/off toggle (default F6), left clicking at your saved CPS (default 23.43) with 40% duty, the bundled avatar detector, 0.40 detection confidence, a 0.50 acquisition FOV radius, sensitivity conversion 1.0 and bounded optional target lead of 1 ms plus measured frame age. DirectML is requested automatically with explicit CPU fallback. Analysis requests up to 120 FPS with the game-friendly 60 FPS GPU / 30 FPS CPU caps and idle budget; input checks request a 1000 Hz limit. Perspective, crossbow slot/trigger/mode setup and internal avatar-image rotation are preserved as setup data. Custom model paths are ignored.
 
 This is one tested baseline, not a proven optimum for every PC or in-game sensitivity. Locking controls cannot make the model recognize every appearance or make arbitrary game mouse settings equivalent. Actual live PvP accuracy and input acceptance still need testing on the PC.
+
+## Closest-target acquisition and preview circle
+
+First person acquires the nearest eligible body to the captured content center. Third person acquires the nearest eligible body to the free cursor inside the selected game's content. Distances are measured in source-window pixels, so wide windows do not distort proximity or turn the acquisition circle into an ellipse. The blue dotted preview circle and cross mark show the actual acquisition origin/radius for the displayed frame; the correction line uses that same frame's origin.
+
+Acquisition still requires current confirmed neural detections after saved-avatar filtering. Offscreen, malformed, stale/future and visual-only continuation candidates cannot become input targets. Once one entity is locked, a different player moving closer does not switch the lock. The circle restricts initial acquisition, not an already locked currently visible body. A lost body pauses aiming and uses the existing identity-recovery rules. A free cursor outside the source cannot acquire a new target.
+
+This adapts nearest-player/FOV ideas from the supplied Lua text to actual screen analysis. It does not execute that script, obtain internal player/team/health coordinates, move projectile objects, alter game physics, or provide wall visibility information. On-screen pixels cannot prove team identity or ownership; the existing saved-avatar/model limitations remain.
 
 ## Actual vision and control
 

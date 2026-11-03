@@ -847,6 +847,27 @@ void paint(HWND window, HDC dc) {
       RECT imageBounds = imageRect(*image);
       drawImage(dc, *image, imageBounds);
       if (!ui.marking) {
+        if (v.acquisition.valid()) {
+          auto q = v.acquisition;
+          double iw = imageBounds.right - imageBounds.left, ih = imageBounds.bottom - imageBounds.top;
+          double radius = v.acquisitionFov * std::min(q.width, q.height);
+          int x = imageBounds.left + int(q.x * iw), y = imageBounds.top + int(q.y * ih);
+          int rx = int(radius / q.width * iw), ry = int(radius / q.height * ih);
+          int clipped = SaveDC(dc);
+          IntersectClipRect(dc, imageBounds.left, imageBounds.top, imageBounds.right, imageBounds.bottom);
+          HPEN circle = CreatePen(PS_DOT, 1, RGB(75, 150, 235));
+          auto previousPen = SelectObject(dc, circle),
+               previousBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+          Ellipse(dc, x - rx, y - ry, x + rx, y + ry);
+          MoveToEx(dc, x - 5, y, nullptr);
+          LineTo(dc, x + 6, y);
+          MoveToEx(dc, x, y - 5, nullptr);
+          LineTo(dc, x, y + 6);
+          SelectObject(dc, previousPen);
+          SelectObject(dc, previousBrush);
+          DeleteObject(circle);
+          RestoreDC(dc, clipped);
+        }
         for (auto &d : v.detections)
           if (!s.single || (v.target && d.id == v.target->id)) {
             COLORREF color = d.visual ? RGB(255, 170, 50) : RGB(255, 65, 85);
@@ -865,10 +886,8 @@ void paint(HWND window, HDC dc) {
           box(dc, v.target->box, imageBounds, RGB(255, 220, 70), 3);
           HPEN p = CreatePen(PS_SOLID, 1, RGB(0, 210, 255));
           auto old = SelectObject(dc, p);
-          POINT cursor{};
-          GetCursorPos(&cursor);
-          double ax = s.camera ? .5 : (cursor.x - v.client.x) / std::max(1., v.client.w),
-                 ay = s.camera ? .5 : (cursor.y - v.client.y) / std::max(1., v.client.h);
+          // Preview correction uses the same frame's acquisition origin, not the app-window cursor.
+          double ax = v.acquisition.x, ay = v.acquisition.y;
           MoveToEx(dc, imageBounds.left + int(ax * (imageBounds.right - imageBounds.left)),
                    imageBounds.top + int(ay * (imageBounds.bottom - imageBounds.top)), nullptr);
           LineTo(dc, imageBounds.left + int(v.target->box.cx() * (imageBounds.right - imageBounds.left)),
@@ -891,7 +910,8 @@ void paint(HWND window, HDC dc) {
       text(dc, 45, 270, L"Start scanning, then focus the selected game for live screen capture",
            RGB(140, 155, 175));
 
-    text(dc, 416, 72, L"DETECTION PREVIEW", red, ui.mono);
+    text(dc, 416, 72, s.camera ? L"PREVIEW | ACQUIRE NEAREST CENTER" : L"PREVIEW | ACQUIRE NEAREST CURSOR",
+         red, ui.mono);
     text(dc, 416, h - 80, wide(error.empty() ? method : error), muted, ui.mono);
   }
   std::wstring stats = number(now() - v.received > .5 ? 0 : v.fps, 0) + L"fps " + number(v.ms, 1) + L"ms | " +

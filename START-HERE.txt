@@ -1,4 +1,4 @@
-LUXWARE WINDOWS 1.4.1 — ONE FIXED PRESET
+LUXWARE WINDOWS 1.4.2 — ONE FIXED PRESET
 
 Extract the ENTIRE ZIP. Open Luxware.exe on Windows. Keep the model and DLLs together.
 
@@ -43,3 +43,10 @@ F6 off or Ctrl+Alt+Esc stops cycling. Focus loss never types into another app.
 
 Crossbow pulse CPS sets one click pair's press/release timing, not shots/sec.
 The 1.10-second wait remains. Different CPS does not bypass the game cooldown.
+
+TARGET ACQUISITION
+First person: nearest eligible body to the center. Third person: nearest to the
+free cursor within the captured game's content. The blue preview circle shows
+the actual acquisition area. Distances use pixels; locked identity remains
+stable if someone else moves closer. Old/offscreen observations cannot aim.
+This uses screen pixels, not the supplied Lua or internal player/team data.

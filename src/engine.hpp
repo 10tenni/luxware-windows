@@ -13,6 +13,8 @@ struct ViewState {
   Rect client;
   double received = 0, ms = 0, fps = 0;
   std::string note = "Choose a window, then Start scan";
+  Acquisition acquisition;
+  double acquisitionFov = .5;
 };
 struct Shared {
   std::mutex mutex;
@@ -238,6 +240,15 @@ inline void worker(Shared &shared) {
         }
         // Capture time is recorded before analysis, not falsely refreshed after a slow inference.
         double received = now();
+        Acquisition acquisition{.5, .5, client.w, client.h};
+        if (!s.camera) {
+          POINT pointer{};
+          if (GetCursorPos(&pointer)) {
+            acquisition.x = (pointer.x - client.x) / client.w;
+            acquisition.y = (pointer.y - client.y) / client.h;
+          } else
+            acquisition.x = -1;
+        }
         std::vector<Feature> own;
         {
           std::lock_guard<std::mutex> l(shared.mutex);
@@ -253,7 +264,7 @@ inline void worker(Shared &shared) {
         auto tracks = tracker.update(detections, received, s.single);
         std::optional<Track> chosen;
         if (!own.empty())
-          chosen = tracker.choose(tracks, received, s.fov, s.single);
+          chosen = tracker.choose(tracks, received, s.fov, s.single, acquisition);
         std::optional<Detection> target;
         if (chosen)
           target = chosen->d; // Only current neural detections may drive input.
@@ -281,7 +292,9 @@ inline void worker(Shared &shared) {
                          received,
                          (finished - started) * 1000,
                          fps.fps(received),
-                         note};
+                         note,
+                         acquisition,
+                         s.fov};
           shared.method = capture.method;
         }
       } catch (const std::exception &e) {

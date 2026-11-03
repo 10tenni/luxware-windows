@@ -252,6 +252,23 @@ struct Track {
   double vx = 0, vy = 0, time = 0;
   unsigned confirmations = 1;
 };
+// Screen-only acquisition geometry. FOV is a true circle in source-window pixels.
+struct Acquisition {
+  double x = .5, y = .5, width = 1, height = 1;
+  bool valid() const {
+    return std::isfinite(x + y + width + height) && width > 0 && height > 0 && x >= 0 && x <= 1 && y >= 0 &&
+           y <= 1;
+  }
+  double distance(Rect box) const {
+    return std::hypot((box.cx() - x) * width, (box.cy() - y) * height) / std::min(width, height);
+  }
+};
+inline bool currentVisible(const Track &track, double time) {
+  auto b = track.d.box;
+  return track.time == time && track.confirmations >= 2 && !track.d.visual && std::isfinite(track.d.score) &&
+         track.d.score >= 0 && track.d.score <= 1 && visible(b).has_value() && b.cx() >= 0 && b.cx() <= 1 &&
+         b.cy() >= 0 && b.cy() <= 1;
+}
 class Tracker {
   std::vector<Track> memory;
   int serial = 1;
@@ -376,10 +393,15 @@ public:
         memory.push_back(old[j]);
     return next;
   }
-  std::optional<Track> choose(const std::vector<Track> &values, double t, double fov, bool single) {
+  std::optional<Track> choose(const std::vector<Track> &values, double t, double fov, bool single,
+                              Acquisition query = {}) {
+    if (!query.valid() || !std::isfinite(fov) || fov <= 0) {
+      note = "Acquisition paused: cursor outside captured content";
+      return {};
+    }
     if (selected)
       for (auto &d : values)
-        if (d.d.id == *selected && d.confirmations >= 2) {
+        if (d.d.id == *selected && currentVisible(d, t)) {
           if (!d.d.visual) {
             reference = d;
             if (!anchor)
@@ -396,9 +418,9 @@ public:
     const Track *best = nullptr;
     double nearest = 10;
     for (auto &d : values) {
-      if (d.confirmations < 2)
+      if (!currentVisible(d, t))
         continue;
-      double dist = std::hypot(d.d.box.cx() - .5, d.d.box.cy() - .5);
+      double dist = query.distance(d.d.box);
       if (dist <= fov && dist < nearest) {
         best = &d;
         nearest = dist;
