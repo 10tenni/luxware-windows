@@ -244,6 +244,61 @@ inline int runSelfTests(const std::filesystem::path &report, bool recorded) {
     check("belowConfidenceObservationCannotMoveMouse", weakCannotMove);
     check("staleObservationCannotMoveMouse", staleCannotMove);
     check("noPlayerClickPairsRemainBalanced", clickCount == upCount);
+    Settings oldTuning;
+    oldTuning.camera = false;
+    oldTuning.avatarNext = 4;
+    oldTuning.hold = true;
+    oldTuning.clicks = false;
+    oldTuning.snap = false;
+    oldTuning.cps = 3;
+    oldTuning.duty = .9;
+    oldTuning.sensitivity = 3;
+    oldTuning.confidence = .99;
+    oldTuning.modelPath = L"not-the-bundled-model.onnx";
+    auto fixed = managedPreset(oldTuning);
+    check("managedPresetIgnoresOldTuning", fixed.snap && fixed.clicks && !fixed.hold && fixed.single &&
+                                               fixed.cps == 23.43 && fixed.duty == .4 &&
+                                               fixed.sensitivity == 1 && fixed.confidence == .4 &&
+                                               fixed.modelPath.empty());
+    check("managedPresetPreservesNecessarySetup",
+          !fixed.camera && fixed.avatarNext == 4 && fixed.bindCode == VK_F6);
+    Shared managedState;
+    managedState.fixedPreset = true;
+    managedState.settings = oldTuning;
+    managedState.armed = managedState.scan = true;
+    managedState.source = reinterpret_cast<HWND>(1);
+    std::atomic<int> managedDown{0}, managedUp{0}, managedMoves{0};
+    std::thread managedThread([&] {
+      inputLoop(
+          managedState,
+          [&](INPUT &input) {
+            if (input.mi.dwFlags & MOUSEEVENTF_LEFTDOWN)
+              ++managedDown;
+            if (input.mi.dwFlags & MOUSEEVENTF_LEFTUP)
+              ++managedUp;
+            if (input.mi.dwFlags & MOUSEEVENTF_MOVE)
+              ++managedMoves;
+            return UINT(1);
+          },
+          [](HWND) { return true; }, [] { return POINT{500, 400}; });
+    });
+    double managedStart = now();
+    while (now() - managedStart < .25) {
+      double t = now();
+      managedState.heartbeat = t;
+      {
+        std::lock_guard<std::mutex> lock(managedState.mutex);
+        managedState.view.received = t;
+        managedState.view.client = {0, 0, 1000, 800};
+      }
+      Sleep(2);
+    }
+    managedState.armed = false;
+    Sleep(15);
+    managedState.quit = true;
+    managedThread.join();
+    check("productionDispatchEnforcesManagedPreset",
+          managedDown >= 3 && managedDown == managedUp && managedMoves == 0);
     auto migrationFile = std::filesystem::temp_directory_path() /
                          (L"luxware-snap-test-" + std::to_wstring(GetCurrentProcessId()) + L".ini");
     {

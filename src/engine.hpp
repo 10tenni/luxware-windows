@@ -27,9 +27,10 @@ struct Shared {
   std::atomic<HWND> source{nullptr};
   std::atomic<unsigned> reset{0}, reload{0}, calibrate{0};
   std::atomic<double> heartbeat{0};
+  std::atomic<bool> fixedPreset{false};
   Settings config() {
     std::lock_guard<std::mutex> l(mutex);
-    return settings;
+    return fixedPreset ? managedPreset(settings) : settings;
   }
   void clearTarget() {
     std::lock_guard<std::mutex> l(mutex);
@@ -357,7 +358,7 @@ inline void inputLoop(
     double received;
     {
       std::lock_guard<std::mutex> l(shared.mutex);
-      s = shared.settings;
+      s = shared.fixedPreset ? managedPreset(shared.settings) : shared.settings;
       client = shared.view.client;
       target = shared.view.target;
       received = shared.view.received;

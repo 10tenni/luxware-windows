@@ -1,47 +1,30 @@
-LUXWARE FOR WINDOWS x64
+LUXWARE WINDOWS 1.3 — ONE FIXED PRESET
 
-1. Extract the ENTIRE ZIP into a folder on the Windows PC.
-2. Open Luxware.exe. Keep its DLLs, Models and other folders together.
-3. Open Roblox, choose its window in Luxware, then click Start scan.
-4. Return to Roblox (Alt+Tab). Capture and input run only while that window is focused.
-5. Use the binding displayed on the Bind button to activate. Your existing Windows settings
-   remain saved. On a fresh PC, mark your own avatar once before enabling aim.
-   You can also use Activate input in Luxware, then return to the game.
-6. First person uses relative camera input. Third person moves the free cursor.
-7. Ctrl+Alt+Esc stops everything. Ctrl+Shift+R resets the target; activate again afterward.
-   No player detected: mouse movement stops; the activated auto clicker keeps clicking normally.
+Extract the ENTIRE ZIP. Open Luxware.exe on Windows. Keep the model and DLLs together.
 
-To change the binding, click Bind, then press a key or mouse button INSIDE Luxware.
-Left/right/middle and Mouse 4/5 are supported, with modifiers and Hold/Toggle modes.
-In Hold mode, the input engine waits until the binding is physically held.
+1. Choose the Roblox window.
+2. First Person = camera input. Third Person = free cursor. Both share ONE preset.
+3. Start scan, then return to Roblox.
+4. F6 toggles aim + clicking. F6 again stops input.
+5. Ctrl+Alt+Esc / STOP ALL stops everything.
+6. Ctrl+Shift+R / Reset target clears the lock and stops input. F6 acquires again.
 
-If your outfit changed or the imported avatar views are wrong: switch the game to third person,
-scan briefly, return to Luxware, click Update my avatar, and drag tightly around YOUR body.
-This reference is saved locally. You do not select an opponent every time.
+No sliders or editable tuning fields. Snap/no smoothing, one entity, left click,
+23.43 CPS and 40% duty are fixed. Old tuning settings cannot override this profile.
+1000 Hz is an input-check target, NOT 1 ms capture/detection.
 
-Capture pauses when Luxware or another app is foreground; the preview then holds the last frame.
-For continuous visible preview, keep Luxware on another monitor while the game has focus.
+Saved avatar views remain local. On a fresh PC, scan your visible body in third person,
+return here, click Mark myself and draw tightly around YOUR body in the frozen preview.
+This is done once per outfit/reference update; you do not repeatedly select an opponent.
+Without your saved reference, clicking works but aiming waits for that setup.
 
-If the detector reports a missing runtime dependency, run Prerequisites\VC_redist.x64.exe
-(the original Microsoft Visual C++ x64 installer), then reopen Luxware.
+No detected player = free mouse; activated normal clicking continues.
+Behind-camera players cannot be detected. Bring them back into view to reacquire.
 
-This is an unsigned Windows 10 (2004+) / Windows 11 x64 build.
-Built with MSVC on Windows. Native core and updater tests pass; recorded regressions also run under Wine.
-Live Windows capture, hardware hotkeys, GPU performance and Roblox acceptance of input are not
-verified. Read README.md and VALIDATION.md for exact scope and troubleshooting.
+Updates checks/downloads happen on launch. Use Updates -> Install update when ready.
+The Updates page contains no tuning controls. If the detector reports missing runtime
+files, keep the complete ZIP contents together and use the included official Microsoft
+Prerequisites\VC_redist.x64.exe when its runtime is missing.
 
-UPDATES: Version 1.1 checks and downloads from the official GitHub release location on launch.
-Open Updates, then Install update when ready. Disable automatic checks in Settings if wanted.
-Version 1.0 needs this new ZIP extracted manually once. Keep the app in a writable folder.
-
-1.2 COMPACT PANEL: First/Third Person tabs choose camera/free-cursor input. Use Change to bind,
-Hold/Toggle for activation mode, and the red sliders for sensitivity/movement rate. Scroll down
-for One entity, Reset, Update my avatar, capture-window selection and detector controls.
-Preview expands the actual capture/detection preview. Settings contains remaining tuning.
-Player lock now requires two consecutive neural observations. No detection still means no movement.
-
-1.2.3 SNAP: Snap (no smoothing) defaults on and uses a full-strength response preset.
-1000 Hz is a 1 ms input-check target, NOT 1 ms detection latency. Actual FPS/ms remain measured.
-A player behind the camera cannot be detected. One-entity matching can reacquire a strong
-unique match when it returns into view within six seconds. No visible detection means no
-automatic turning; clicking continues while activated.
+Tested fixed baseline. Exact PvP accuracy, game input acceptance and performance vary
+by hardware/game settings. See README.md, VALIDATION.md and the included reports.

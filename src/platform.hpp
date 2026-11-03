@@ -162,6 +162,36 @@ struct Settings {
   int avatarNext = 0;
   std::wstring modelPath;
 };
+// One tested application profile. Only input perspective and internal avatar-file rotation survive.
+inline Settings managedPreset(const Settings &saved) {
+  Settings s;
+  s.camera = saved.camera;
+  s.avatarNext = saved.avatarNext;
+  s.hold = false;
+  s.aim = true;
+  s.clicks = true;
+  s.right = false;
+  s.single = true;
+  s.level = false;
+  s.gpu = true;
+  s.gameFriendly = true;
+  s.snap = true;
+  s.cps = 23.43;
+  s.duty = .4;
+  s.strength = 1;
+  s.smoothing = 0;
+  s.sensitivity = 1;
+  s.fov = .5;
+  s.confidence = .4;
+  s.prediction = .001;
+  s.fps = 120;
+  s.hz = 1000;
+  s.bindKind = 0;
+  s.bindCode = VK_F6;
+  s.bindMods = 0;
+  s.modelPath.clear();
+  return s;
+}
 inline bool reservedBinding(int kind, int code, int mods) {
   return kind == 0 && (((mods & 3) == 3 && code == 'R') || ((mods & 5) == 5 && code == VK_ESCAPE));
 }

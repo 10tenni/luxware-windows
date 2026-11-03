@@ -2,7 +2,7 @@
 #include "platform.hpp"
 
 namespace lux {
-inline constexpr const wchar_t *appVersion = L"1.2.3";
+inline constexpr const wchar_t *appVersion = L"1.3.0";
 // A separate process keeps networking, ZIP preparation and replacement off the input/UI threads.
 class Updates {
   HANDLE process = nullptr;

@@ -265,8 +265,8 @@ LRESULT CALLBACK keyboardHook(int n, WPARAM message, LPARAM data) {
             state.bindingHeld = false;
             if (s.hold)
               state.armed = false;
-          } else if (down && !repeated && !ui.bindingDown && ui.physicalMods == s.bindMods &&
-                     front(state.source)) {
+          } else if (down && !repeated && !ui.bindingDown &&
+                     (state.fixedPreset || ui.physicalMods == s.bindMods) && front(state.source)) {
             ui.bindingDown = true;
             state.bindingHeld = true;
             PostMessageW(ui.window, APP_BIND, 1, 0);
@@ -310,7 +310,8 @@ LRESULT CALLBACK mouseHook(int n, WPARAM message, LPARAM data) {
           state.bindingHeld = false;
           if (s.hold)
             state.armed = false;
-        } else if (down && !ui.bindingDown && ui.physicalMods == s.bindMods && front(state.source)) {
+        } else if (down && !ui.bindingDown && (state.fixedPreset || ui.physicalMods == s.bindMods) &&
+                   front(state.source)) {
           ui.bindingDown = true;
           state.bindingHeld = true;
           PostMessageW(ui.window, APP_BIND, 1, 0);
@@ -365,6 +366,25 @@ void layout() {
   };
   ShowWindow(ui.view, SW_HIDE);
   ShowWindow(ui.mode, SW_HIDE);
+  if (state.fixedPreset) {
+    ui.scroll = 0;
+    ShowScrollBar(ui.window, SB_VERT, FALSE);
+    place(FIRSTTAB, 20, 55, 174, 34, true);
+    place(THIRDTAB, 202, 55, 174, 34, true);
+    place(SCAN, 120, 104, 116, 30, true);
+    place(ARM, 246, 104, 130, 30, true);
+    place(SOURCE, 30, 382, 230, 180, true);
+    place(REFRESH, 270, 382, 90, 30, true);
+    place(SELF, 30, 432, 330, 30, true);
+    place(PREVIEW, 20, h - 88, 110, 30, true);
+    place(RESET, 140, h - 88, 110, 30, true);
+    place(STOP, 260, h - 88, 116, 30, true);
+    place(UPDATES, 286, 14, 90, 28, true);
+    ui.preview = {dip(416), dip(104), dip(w - 24), dip(h - 100)};
+    InvalidateRect(ui.window, nullptr, TRUE);
+    return;
+  }
+
   place(FIRSTTAB, 20, 55, 174, 34, true);
   place(THIRDTAB, 202, 55, 174, 34, true);
   place(SCAN, 120, 104, 116, 30, true);
@@ -514,7 +534,7 @@ void paint(HWND window, HDC dc) {
   bool own;
   {
     std::lock_guard<std::mutex> l(state.mutex);
-    s = state.settings;
+    s = state.fixedPreset ? managedPreset(state.settings) : state.settings;
     v = state.view;
     provider = state.provider;
     error = state.modelError;
@@ -540,32 +560,48 @@ void paint(HWND window, HDC dc) {
     DeleteObject(line);
     text(dc, 32, y + 12 - ui.scroll, title, RGB(225, 225, 231));
   };
-  card(160, 90, L"Hotkey");
-  RECT key{dip(32), dip(207 - ui.scroll), dip(264), dip(237 - ui.scroll)};
-  HBRUSH dark = CreateSolidBrush(RGB(8, 8, 10));
-  FillRect(dc, &key, dark);
-  DeleteObject(dark);
-  text(dc, 42, 212 - ui.scroll, bindingName(s), RGB(235, 235, 240), ui.mono);
-  card(264, 86, L"Mode");
-  if (s.camera) {
-    card(364, 118, L"Sensitivity");
-    text(dc, 310, 376 - ui.scroll, number(s.sensitivity, 2), red, ui.mono);
-    text(dc, 32, 456 - ui.scroll, L"Adjust to match your in-game sensitivity.", muted, ui.mono);
+  if (state.fixedPreset) {
+    card(160, 164, L"ONE FIXED PRESET");
+    text(dc, 32, 195, L"Snap on | No smoothing", red, ui.mono);
+    text(dc, 32, 220, number(s.cps, 2) + L" CPS | " + number(s.duty * 100, 0) + L"% duty | Left click", muted,
+         ui.mono);
+    text(dc, 32, 245, L"F6 toggles aim + clicks", muted, ui.mono);
+    text(dc, 32, 270, L"One entity | Ctrl+Shift+R resets", muted, ui.mono);
+    text(dc, 32, 295, L"1000 Hz input limit; measured FPS below", muted, ui.mono);
+    card(340, 150, L"Capture & your avatar");
+    text(dc, 32, 471, own ? L"Saved avatar reference loaded" : L"Mark your own avatar once to enable aim",
+         muted, ui.mono);
+    card(506, 102, L"Live processing");
+    text(dc, 32, 541, wide(provider), muted, ui.mono);
+    text(dc, 32, 574, L"While active: no player = clicker only", muted, ui.mono);
   } else {
-    card(364, 118, L"Third person");
-    text(dc, 32, 408 - ui.scroll, L"Moves the free cursor onto the player.", muted, ui.mono);
-    text(dc, 32, 438 - ui.scroll, L"No player: your mouse stays free.", muted, ui.mono);
-  }
-  card(496, 118, L"Tracking frequency");
-  text(dc, 32, 530 - ui.scroll, L"Polling limit; not detection FPS", muted, ui.mono);
-  text(dc, 286, 508 - ui.scroll, number(s.hz, 0) + L" Hz", red, ui.mono);
+    card(160, 90, L"Hotkey");
+    RECT key{dip(32), dip(207 - ui.scroll), dip(264), dip(237 - ui.scroll)};
+    HBRUSH dark = CreateSolidBrush(RGB(8, 8, 10));
+    FillRect(dc, &key, dark);
+    DeleteObject(dark);
+    text(dc, 42, 212 - ui.scroll, bindingName(s), RGB(235, 235, 240), ui.mono);
+    card(264, 86, L"Mode");
+    if (s.camera) {
+      card(364, 118, L"Sensitivity");
+      text(dc, 310, 376 - ui.scroll, number(s.sensitivity, 2), red, ui.mono);
+      text(dc, 32, 456 - ui.scroll, L"Adjust to match your in-game sensitivity.", muted, ui.mono);
+    } else {
+      card(364, 118, L"Third person");
+      text(dc, 32, 408 - ui.scroll, L"Moves the free cursor onto the player.", muted, ui.mono);
+      text(dc, 32, 438 - ui.scroll, L"No player: your mouse stays free.", muted, ui.mono);
+    }
+    card(496, 118, L"Tracking frequency");
+    text(dc, 32, 530 - ui.scroll, L"Polling limit; not detection FPS", muted, ui.mono);
+    text(dc, 286, 508 - ui.scroll, number(s.hz, 0) + L" Hz", red, ui.mono);
 
-  card(628, 124, L"");
-  text(dc, 30, 690 - ui.scroll, L"CPS");
-  text(dc, 194, 690 - ui.scroll, L"Duty %");
-  card(766, 96, L"");
-  card(876, 140, L"Capture & detector");
-  text(dc, 32, 996 - ui.scroll, wide(provider), muted, ui.mono);
+    card(628, 124, L"");
+    text(dc, 30, 690 - ui.scroll, L"CPS");
+    text(dc, 194, 690 - ui.scroll, L"Duty %");
+    card(766, 96, L"");
+    card(876, 140, L"Capture & detector");
+    text(dc, 32, 996 - ui.scroll, wide(provider), muted, ui.mono);
+  }
   RestoreDC(dc, saved);
   bool inputEngaged = false;
   if (state.armed) {
@@ -750,6 +786,23 @@ void drawButton(DRAWITEMSTRUCT *d) {
     DrawFocusRect(d->hDC, &d->rcItem);
 }
 LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
+  if (state.fixedPreset && m == WM_CREATE) {
+    HWND heading = control(L"STATIC", L"One fixed preset - no tuning required", 780, 0, w);
+    MoveWindow(heading, 20, 25, 500, 32, TRUE);
+    HWND description =
+        control(L"STATIC",
+                L"Snap / no smoothing, one entity, F6 toggle.\n23.43 CPS, 40% duty, left click.\nThe bundled "
+                L"detector and processing budget are managed.\nCtrl+Alt+Esc stops everything.",
+                781, 0, w);
+    MoveWindow(description, 20, 75, 500, 110, TRUE);
+    MoveWindow(button(L"Check for updates", CHECKUPDATE, w), 20, 205, 230, 32, TRUE);
+    MoveWindow(control(L"STATIC", updates.message.c_str(), 790, 0, w), 20, 255, 500, 65, TRUE);
+    MoveWindow(button(L"Done", DONE, w), 390, 330, 130, 32, TRUE);
+    return 0;
+  }
+  if (state.fixedPreset && m == WM_COMMAND && LOWORD(wp) != DONE && LOWORD(wp) != CHECKUPDATE)
+    return 0;
+
   if (m == WM_CREATE) {
     const wchar_t *names[] = {
         L"Aim strength",         L"Smoothing",        L"Camera sensitivity", L"Acquire FOV",
@@ -800,6 +853,8 @@ LRESULT CALLBACK settingsProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     return 0;
   }
   if (m == WM_HSCROLL) {
+    if (state.fixedPreset)
+      return 0;
     if (ui.sliders.size() == 8) {
       auto s = state.config();
       auto v = [&](int i) { return int(SendMessageW(ui.sliders[i], TBM_GETPOS, 0, 0)); };
@@ -902,9 +957,9 @@ void showSettings() {
     SetForegroundWindow(ui.settings);
     return;
   }
-  ui.settings = CreateWindowExW(WS_EX_TOOLWINDOW, L"LuxwareSettings", L"Luxware settings",
-                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, 200, 150, 565, 740, ui.window,
-                                nullptr, GetModuleHandleW(nullptr), nullptr);
+  ui.settings = CreateWindowExW(
+      WS_EX_TOOLWINDOW, L"LuxwareSettings", L"Luxware updates", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, 200,
+      150, 565, state.fixedPreset ? 420 : 740, ui.window, nullptr, GetModuleHandleW(nullptr), nullptr);
   ShowWindow(ui.settings, SW_SHOW);
 }
 void markOwn() {
@@ -1031,6 +1086,26 @@ void renderOwnWindow(const std::filesystem::path &path) {
   DeleteDC(dc);
 }
 void command(int id, int notification) {
+  if (state.fixedPreset) {
+    switch (id) {
+    case STOP:
+    case REFRESH:
+    case SCAN:
+    case ARM:
+    case RESET:
+    case SELF:
+    case SOURCE:
+    case PREVIEW:
+    case SETTINGS:
+    case UPDATES:
+    case FIRSTTAB:
+    case THIRDTAB:
+      break;
+    default:
+      return;
+    }
+  }
+
   if (id == PREVIEW) {
     togglePreview();
     return;
@@ -1215,15 +1290,25 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
                       {TOGGLEMODE, L"Toggle"},
                       {PREVIEW, L"Preview"},
                       {SNAP, L"Snap (no smoothing)"}})
-      button(pair.second, pair.first);
-    HWND sens = control(TRACKBAR_CLASSW, L"", MAINSENS, TBS_NOTICKS);
-    HWND hz = control(TRACKBAR_CLASSW, L"", MAINHZ, TBS_NOTICKS);
-    SendMessageW(sens, TBM_SETRANGE, TRUE, MAKELPARAM(10, 300));
-    SendMessageW(sens, TBM_SETPOS, TRUE, int(s.sensitivity * 100));
-    SendMessageW(hz, TBM_SETRANGE, TRUE, MAKELPARAM(5, 1000));
-    SendMessageW(hz, TBM_SETPOS, TRUE, int(s.hz));
-    ui.cps = control(L"EDIT", number(s.cps).c_str(), CPS, ES_AUTOHSCROLL | WS_BORDER);
-    ui.duty = control(L"EDIT", number(s.duty * 100).c_str(), DUTY, ES_AUTOHSCROLL | WS_BORDER);
+      if (!state.fixedPreset || pair.first == REFRESH || pair.first == SCAN || pair.first == STOP ||
+          pair.first == ARM || pair.first == RESET || pair.first == SELF || pair.first == UPDATES ||
+          pair.first == FIRSTTAB || pair.first == THIRDTAB || pair.first == PREVIEW)
+        button(pair.second, pair.first);
+    if (state.fixedPreset) {
+      if (ui.button)
+        DestroyWindow(ui.button);
+      ui.button = nullptr;
+      SetWindowTextW(GetDlgItem(w, RESET), L"Reset target");
+    } else {
+      HWND sens = control(TRACKBAR_CLASSW, L"", MAINSENS, TBS_NOTICKS);
+      HWND hz = control(TRACKBAR_CLASSW, L"", MAINHZ, TBS_NOTICKS);
+      SendMessageW(sens, TBM_SETRANGE, TRUE, MAKELPARAM(10, 300));
+      SendMessageW(sens, TBM_SETPOS, TRUE, int(s.sensitivity * 100));
+      SendMessageW(hz, TBM_SETRANGE, TRUE, MAKELPARAM(5, 1000));
+      SendMessageW(hz, TBM_SETPOS, TRUE, int(s.hz));
+      ui.cps = control(L"EDIT", number(s.cps).c_str(), CPS, ES_AUTOHSCROLL | WS_BORDER);
+      ui.duty = control(L"EDIT", number(s.duty * 100).c_str(), DUTY, ES_AUTOHSCROLL | WS_BORDER);
+    }
     if (!ui.testing) {
       ui.keyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboardHook, GetModuleHandleW(nullptr), 0);
       ui.mouseHook = SetWindowsHookExW(WH_MOUSE_LL, mouseHook, GetModuleHandleW(nullptr), 0);
@@ -1284,6 +1369,8 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     layout();
     return 0;
   case WM_HSCROLL: {
+    if (state.fixedPreset)
+      return 0;
     int id = GetDlgCtrlID(reinterpret_cast<HWND>(lp));
     if (id == MAINSENS || id == MAINHZ) {
       auto s = state.config();
@@ -1502,47 +1589,42 @@ int runUITests(HWND window, const std::filesystem::path &report) {
   std::vector<std::pair<std::string, bool>> checks;
   auto check = [&](const std::string &name, bool ok) { checks.push_back({name, ok}); };
   check("startsInCompactView", !ui.previewVisible);
-  check("snapEnabledByDefault", state.config().snap);
+  check("managedPresetEnabled", state.fixedPreset && state.config().snap && state.config().single);
+  bool absent = true;
+  for (int id : {BIND, HOLDMODE, TOGGLEMODE, MAINSENS, MAINHZ, SNAP, CLICKS, BUTTON, CPS, DUTY, SINGLE,
+                 IMPORT, SETTINGS})
+    absent = absent && !GetDlgItem(window, id);
+  check("tuningAndAdvancedControlsAreAbsent", absent);
   command(SNAP, 0);
-  check("snapCanBeDisabled", !state.config().snap);
-  command(SNAP, 0);
-  check("snapPresetDisablesSmoothingAndRaisesInputLimit",
-        state.config().snap && state.config().smoothing == 0 && state.config().strength == 1 &&
-            state.config().hz == 1000);
-
-  command(THIRDTAB, 0);
-  check("thirdPersonTabChangesEngineMode",
-        !state.config().camera && !(GetWindowLongPtrW(GetDlgItem(window, MAINSENS), GWL_STYLE) & WS_VISIBLE));
-  command(FIRSTTAB, 0);
-  check("firstPersonTabChangesEngineMode",
-        state.config().camera && (GetWindowLongPtrW(GetDlgItem(window, MAINSENS), GWL_STYLE) & WS_VISIBLE));
+  command(CLICKS, 0);
   command(HOLDMODE, 0);
-  check("holdButtonChangesActivationMode", state.config().hold);
-  command(TOGGLEMODE, 0);
-  check("toggleButtonChangesActivationMode", !state.config().hold);
-  HWND sensitivity = GetDlgItem(window, MAINSENS), hz = GetDlgItem(window, MAINHZ);
-  SendMessageW(sensitivity, TBM_SETPOS, TRUE, 145);
-  SendMessageW(window, WM_HSCROLL, 0, reinterpret_cast<LPARAM>(sensitivity));
-  check("sensitivitySliderChangesEngineValue", std::abs(state.config().sensitivity - 1.45) < 1e-9);
-  SendMessageW(hz, TBM_SETPOS, TRUE, 180);
-  SendMessageW(window, WM_HSCROLL, 0, reinterpret_cast<LPARAM>(hz));
-  check("frequencySliderChangesEngineValue", state.config().hz == 180);
-  SetWindowTextW(ui.cps, L"23.43");
-  SetWindowTextW(ui.duty, L"40.5");
-  applyEdits();
-  check("decimalCpsDutyFieldsReachEngine",
-        std::abs(state.config().cps - 23.43) < 1e-9 && std::abs(state.config().duty - .405) < 1e-9);
-  ui.scroll = 1000;
-  layout();
-  check("scrollRevealsCaptureSelector", (GetWindowLongPtrW(ui.source, GWL_STYLE) & WS_VISIBLE) != 0);
-  command(PREVIEW, 0);
-  check("previewButtonOpensPreview", ui.previewVisible && ui.preview.right > ui.preview.left);
-  command(PREVIEW, 0);
-  check("previewButtonReturnsToCompact", !ui.previewVisible);
   command(BIND, 0);
-  captureBinding(1, 4);
-  check("mouseBindingRecorderStoresSideButton",
-        state.config().bindKind == 1 && state.config().bindCode == 4 && !ui.recording);
+  command(IMPORT, 0);
+  check("legacyTuningCommandsCannotChangePreset", state.config().snap && state.config().clicks &&
+                                                      !state.config().hold && !ui.recording &&
+                                                      state.config().modelPath.empty());
+  command(THIRDTAB, 0);
+  check("thirdPersonInputTypeStillWorks", !state.config().camera);
+  command(FIRSTTAB, 0);
+  check("firstPersonInputTypeStillWorks", state.config().camera);
+  check("captureSetupAlwaysVisible", (GetWindowLongPtrW(ui.source, GWL_STYLE) & WS_VISIBLE) != 0);
+  command(PREVIEW, 0);
+  check("previewStillOpens", ui.previewVisible);
+  command(PREVIEW, 0);
+  check("previewStillCloses", !ui.previewVisible);
+  auto preset = state.config();
+  check("fixedCpsDutyAndActivation",
+        preset.cps == 23.43 && preset.duty == .4 && preset.bindCode == VK_F6 && !preset.hold);
+  HWND updatePanel = CreateWindowExW(WS_EX_TOOLWINDOW, L"LuxwareSettings", L"Updates", WS_OVERLAPPED, 0, 0,
+                                     565, 420, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+  ui.settings = updatePanel;
+  bool updateOnly = updatePanel && GetDlgItem(updatePanel, CHECKUPDATE) && !GetDlgItem(updatePanel, GPU) &&
+                    !GetDlgItem(updatePanel, AUTOUPDATE);
+  for (int i = 0; i < 8; ++i)
+    updateOnly = updateOnly && !GetDlgItem(updatePanel, SLIDER + i);
+  check("updatePanelHasNoTuningControls", updateOnly);
+  SendMessageW(updatePanel, WM_COMMAND, DONE, 0);
+  check("updatePanelDoneButtonWorks", !IsWindow(updatePanel));
   state.source = window;
   command(SCAN, 0);
   check("startScanButtonArmsCaptureState", state.scan);
@@ -1597,6 +1679,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
       return 0;
     }
     updates.load();
+    updates.setAutomatic(true);
     ui.updateAfter = now() + 3;
   }
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1608,7 +1691,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
     } catch (...) {
       status("Preset import failed; settings will use defaults");
     }
-  state.settings = ui.testing ? Settings{} : loadSettings();
+  state.fixedPreset = true;
+  state.settings = managedPreset(ui.testing ? Settings{} : loadSettings());
   if (!ui.testing)
     try {
       auto folder = dataFolder() / L"AvatarViews";
@@ -1635,7 +1719,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int show) {
   RegisterClassExW(&cls);
   RECT workArea{};
   SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
-  int initialHeight = std::clamp(int(workArea.bottom - workArea.top) - 40, 640, 900);
+  int initialHeight = std::clamp(int(workArea.bottom - workArea.top) - 40, 640, 760);
   HWND window =
       CreateWindowExW(0, L"LuxwareWindows", L"Luxware", WS_OVERLAPPEDWINDOW | WS_VSCROLL, CW_USEDEFAULT,
                       CW_USEDEFAULT, 436, initialHeight, nullptr, nullptr, instance, nullptr);
